@@ -125,6 +125,31 @@ export const outreach = sqliteTable("outreach", {
 });
 
 // ---------------------------------------------------------------------------
+// Uploaded files (currently just the resume PDF), stored as base64 in the DB.
+//
+// Why the DB and not the filesystem: Vercel's function filesystem is read-only
+// apart from /tmp, and /tmp is per-instance and wiped between invocations. An
+// uploaded file written to disk would vanish before the cron job could read it.
+// Committing the PDF to the repo instead would put a phone number and email
+// into git history. base64 in SQLite sidesteps both.
+//
+// Exactly one row per `kind` should have isActive = true; saveResume() in
+// lib/documents.ts enforces that.
+// ---------------------------------------------------------------------------
+export const documents = sqliteTable("documents", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  kind: text("kind").notNull().default("resume"), // "resume" for now
+  filename: text("filename").notNull(),
+  mimeType: text("mime_type").notNull().default("application/pdf"),
+  sizeBytes: integer("size_bytes").notNull(), // size of the DECODED file
+  contentBase64: text("content_base64").notNull(),
+  isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
+  uploadedAt: integer("uploaded_at", { mode: "timestamp" }).default(
+    sql`(unixepoch())`
+  ),
+});
+
+// ---------------------------------------------------------------------------
 // One row per daily cron run — powers the digest email + an audit trail
 // ---------------------------------------------------------------------------
 export const digestLogs = sqliteTable("digest_logs", {

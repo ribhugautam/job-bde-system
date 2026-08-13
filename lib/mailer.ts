@@ -21,10 +21,17 @@ function getTransporter() {
   return _transporter;
 }
 
+export type MailAttachment = {
+  filename: string;
+  content: Buffer;
+  contentType: string;
+};
+
 export async function sendMail(opts: {
   to: string;
   subject: string;
   text: string;
+  attachments?: MailAttachment[];
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     const transporter = getTransporter();
@@ -33,6 +40,7 @@ export async function sendMail(opts: {
       to: opts.to,
       subject: opts.subject,
       text: opts.text,
+      ...(opts.attachments?.length ? { attachments: opts.attachments } : {}),
     });
     return { ok: true };
   } catch (err) {

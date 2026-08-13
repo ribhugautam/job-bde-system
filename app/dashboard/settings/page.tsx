@@ -1,4 +1,6 @@
 import { LINKS } from "@/lib/resumeData";
+import { getActiveResume } from "@/lib/documents";
+import ResumeUpload from "@/components/ResumeUpload";
 
 export const dynamic = "force-dynamic";
 
@@ -15,10 +17,42 @@ function EnvRow({ name, hint }: { name: string; hint: string }) {
   );
 }
 
-export default function SettingsPage() {
+export default async function SettingsPage() {
   const dryRun = process.env.DRY_RUN === "1";
+  const resume = await getActiveResume();
   return (
     <div className="space-y-8 max-w-2xl">
+      <div>
+        <h2 className="mb-2 text-sm font-semibold text-neutral-300">Resume</h2>
+        <div className="rounded border border-neutral-800 p-3 space-y-3">
+          {resume ? (
+            <div className="text-sm">
+              <span className="text-emerald-400">On file:</span>{" "}
+              <span className="font-mono text-xs">{resume.filename}</span>{" "}
+              <span className="text-xs text-neutral-500">
+                ({(resume.sizeBytes / 1024).toFixed(0)} KB
+                {resume.uploadedAt
+                  ? `, uploaded ${new Date(resume.uploadedAt).toLocaleDateString()}`
+                  : ""}
+                )
+              </span>
+            </div>
+          ) : (
+            <div className="text-sm text-red-400">
+              No resume uploaded. Applications will be queued for review instead of
+              sent — an application email with no CV attached is worse than none.
+            </div>
+          )}
+          <ResumeUpload />
+          <p className="text-xs text-neutral-500">
+            PDF only, max 2MB. Attached to every application sent by email;
+            deliberately not attached to cold freelance outreach (hurts spam
+            scoring). Uploading replaces the active resume; older versions are
+            kept so you can tell which CV went with which application.
+          </p>
+        </div>
+      </div>
+
       <div
         className={`rounded border p-3 ${
           dryRun

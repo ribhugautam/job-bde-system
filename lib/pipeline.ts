@@ -4,6 +4,7 @@ import { fetchAllJobs, fetchAllLeads } from "./sources";
 import { scoreJob, scoreLead } from "./matcher";
 import { generateCoverLetter, generatePitch } from "./drafts";
 import { sendMail, sendDigest } from "./mailer";
+import { getActiveResume } from "./documents";
 import { LINKS } from "./resumeData";
 
 const MATCH_THRESHOLD = 40; // 0-100; below this a job/lead is kept but not drafted
@@ -31,6 +32,18 @@ export async function runDailyPipeline() {
   let applicationsQueued = 0;
   let outreachAutoSent = 0;
   let outreachQueued = 0;
+
+  // ---- 0. Resume ----------------------------------------------------------
+  // Fetched once and reused. An application email with no CV attached reads as
+  // careless and burns the lead, so with no resume on file we refuse to
+  // auto-send anything and queue it for review instead.
+  const resume = await getActiveResume();
+  if (!resume) {
+    errors.push(
+      "No resume on file - all applications queued for manual review instead of being sent. " +
+        "Upload a PDF at /dashboard/settings."
+    );
+  }
 
   // ---- 1. Fetch from all sources -----------------------------------------
   const [{ jobs: rawJobs, errors: jobErrors }, { leads: rawLeads, errors: leadErrors }] =
@@ -124,7 +137,8 @@ export async function runDailyPipeline() {
         postedAt: job.postedAt || undefined,
       });
 
-      const wouldAutoSend = Boolean(job.applyEmail);
+      // No resume => never auto-send, regardless of DRY_RUN.
+      const wouldAutoSend = Boolean(job.applyEmail) && Boolean(resume);
       const canAutoSend = wouldAutoSend && !DRY_RUN;
       const [app] = await db
         .insert(schema.applications)
@@ -138,11 +152,18 @@ export async function runDailyPipeline() {
         })
         .returning();
 
-      if (canAutoSend && job.applyEmail) {
+      if (canAutoSend && job.applyEmail && resume) {
         const result = await sendMail({
           to: job.applyEmail,
           subject: `Application: ${job.title}`,
           text: draft.text,
+          attachments: [
+            {
+              filename: resume.filename,
+              content: resume.buffer,
+              contentType: resume.mimeType,
+            },
+          ],
         });
         if (result.ok) {
           await db
@@ -215,6 +236,10 @@ export async function runDailyPipeline() {
         })
         .returning();
 
+      // Deliberately NO resume attachment on cold outreach: an unsolicited
+      // email with a PDF attached scores materially worse with spam filters,
+      // and a freelance client wants a portfolio link first, not a CV. The
+      // pitch links to the portfolio and Ziro instead.
       if (canAutoSend && lead.contactEmail) {
         const result = await sendMail({
           to: lead.contactEmail,

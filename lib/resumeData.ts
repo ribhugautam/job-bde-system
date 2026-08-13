@@ -20,7 +20,10 @@ export const CANDIDATE = {
   name: "Ribhu Gautam",
   title: "Full-Stack Software Engineer (Agentic AI / Next.js)",
   summary:
-    "Full-stack software engineer with 2+ years shipping production Next.js/React/TypeScript/Node apps and Flutter mobile apps, " +
+    // ~2 yr 8 mo as of Aug 2026 (Dec 2023 start). The CV states no figure, so
+    // this is the one number the system asserts that the PDF does not — keep it
+    // accurate as time passes.
+    "Full-stack software engineer with nearly 3 years shipping production Next.js/React/TypeScript/Node apps and Flutter mobile apps, " +
     "and hands-on experience architecting agentic AI systems: LLM orchestration, custom RAG pipelines with PII-safety layers, " +
     "multi-agent pipelines, and MCP integrations. Has led a 15-engineer team and run client-facing requirements/demo calls with " +
     "US-based clients.",
@@ -47,8 +50,12 @@ export const SKILLS: { name: string; weight: number; aliases?: string[] }[] = [
   { name: "rest api", weight: 2, aliases: ["restful", "rest apis"] },
   { name: "aws amplify", weight: 2, aliases: ["amplify"] },
   { name: "appwrite", weight: 1 },
-  { name: "azure devops", weight: 2, aliases: ["azure ci/cd", "azure"] },
-  { name: "github actions", weight: 2 },
+  { name: "azure devops", weight: 2, aliases: ["azure ci/cd", "azure", "ci/cd"] },
+  { name: "github actions", weight: 2, aliases: ["ci/cd pipeline"] },
+  { name: "monorepo", weight: 2, aliases: ["turborepo", "nx monorepo"] },
+  { name: "microservices", weight: 2, aliases: ["microservice"] },
+  { name: "api integration", weight: 2, aliases: ["third-party api", "third party api"] },
+  { name: "agile", weight: 1, aliases: ["scrum"] },
   { name: "git", weight: 2 },
   { name: "architecture", weight: 2, aliases: ["system design", "architecture design"] },
 
@@ -62,6 +69,8 @@ export const SKILLS: { name: string; weight: number; aliases?: string[] }[] = [
   { name: "openrouter", weight: 2 },
   { name: "claude", weight: 2, aliases: ["claude ai", "anthropic"] },
   { name: "copilot", weight: 1, aliases: ["github copilot"] },
+  { name: "perplexity", weight: 1 },
+  { name: "openclaw", weight: 1 },
 
   // Intermediate
   { name: "express.js", weight: 2, aliases: ["express"] },
