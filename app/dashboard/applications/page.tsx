@@ -1,23 +1,33 @@
 import { getDb, schema } from "@/lib/infra/db/client";
-import { desc } from "drizzle-orm";
+import { desc, inArray } from "drizzle-orm";
 import StatusBadge from "@/components/StatusBadge";
 import { SendApplicationButton } from "@/components/ActionButtons";
+import DbErrorNotice from "@/components/DbErrorNotice";
 
 export const dynamic = "force-dynamic";
 
 export default async function ApplicationsPage() {
-  const db = getDb();
-  const apps = await db
-    .select()
-    .from(schema.applications)
-    .orderBy(desc(schema.applications.createdAt))
-    .limit(200);
+  let apps;
+  let jobById;
+  try {
+    const db = getDb();
+    apps = await db
+      .select()
+      .from(schema.applications)
+      .orderBy(desc(schema.applications.createdAt))
+      .limit(200);
 
-  const jobIds = apps.map((a) => a.jobId);
-  const jobs = jobIds.length
-    ? await db.select().from(schema.jobs)
-    : [];
-  const jobById = new Map(jobs.map((j) => [j.id, j]));
+    // Fetch only the jobs these applications reference. This previously
+    // selected the ENTIRE jobs table and then indexed it in memory, so the page
+    // got slower with every job ever seen rather than with what it displays.
+    const jobIds = [...new Set(apps.map((a) => a.jobId))];
+    const jobs = jobIds.length
+      ? await db.select().from(schema.jobs).where(inArray(schema.jobs.id, jobIds))
+      : [];
+    jobById = new Map(jobs.map((j) => [j.id, j]));
+  } catch (err) {
+    return <DbErrorNotice error={err} />;
+  }
 
   return (
     <div className="space-y-3">

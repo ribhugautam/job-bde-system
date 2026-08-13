@@ -1,6 +1,7 @@
 import { getDb, schema } from "@/lib/infra/db/client";
 import { count, desc, eq } from "drizzle-orm";
 import Link from "next/link";
+import DbErrorNotice from "@/components/DbErrorNotice";
 
 export const dynamic = "force-dynamic";
 
@@ -70,27 +71,16 @@ function Stat({
 
 export default async function OverviewPage() {
   let data;
-  let dbError: string | null = null;
+  let dbError: unknown = null;
   try {
     data = await loadStats();
   } catch (err) {
-    dbError = err instanceof Error ? err.message : String(err);
+    // Keep the error object, not just its message: the useful part is in the
+    // cause chain, and stringifying here would throw it away.
+    dbError = err;
   }
 
-  if (dbError) {
-    return (
-      <div className="rounded border border-red-900 bg-red-950/40 p-4 text-sm text-red-200">
-        Couldn&apos;t reach the database: {dbError}
-        <br />
-        Set <span className="font-mono text-xs">TURSO_DATABASE_URL</span> and{" "}
-        <span className="font-mono text-xs">TURSO_AUTH_TOKEN</span> in your
-        Vercel project&apos;s environment variables, then redeploy. With both
-        unset the app falls back to a local <span className="font-mono text-xs">./local.db</span>{" "}
-        file, so this error usually means a remote URL with a bad or missing
-        token.
-      </div>
-    );
-  }
+  if (dbError) return <DbErrorNotice error={dbError} />;
 
   const { jobs, leads, readyPitches, queued, digests } = data!;
   const lastRun = digests[0];

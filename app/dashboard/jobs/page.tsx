@@ -2,6 +2,7 @@ import { getDb, schema } from "@/lib/infra/db/client";
 import { desc } from "drizzle-orm";
 import StatusBadge from "@/components/StatusBadge";
 import { StatusSelect } from "@/components/ActionButtons";
+import DbErrorNotice from "@/components/DbErrorNotice";
 
 export const dynamic = "force-dynamic";
 
@@ -11,8 +12,18 @@ const JOB_STATUSES = [
 ];
 
 export default async function JobsPage() {
-  const db = getDb();
-  const jobs = await db.select().from(schema.jobs).orderBy(desc(schema.jobs.score)).limit(200);
+  let jobs;
+  try {
+    jobs = await getDb()
+      .select()
+      .from(schema.jobs)
+      .orderBy(desc(schema.jobs.score))
+      .limit(200);
+  } catch (err) {
+    // Without this the page throws and Next renders a blank "server error",
+    // which in production also hides the message. Say what actually broke.
+    return <DbErrorNotice error={err} />;
+  }
 
   return (
     <div className="space-y-3">

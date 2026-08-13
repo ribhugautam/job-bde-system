@@ -1,21 +1,31 @@
 import { getDb, schema } from "@/lib/infra/db/client";
-import { desc } from "drizzle-orm";
+import { desc, inArray } from "drizzle-orm";
 import StatusBadge from "@/components/StatusBadge";
 import { SendOutreachButton } from "@/components/ActionButtons";
+import DbErrorNotice from "@/components/DbErrorNotice";
 
 export const dynamic = "force-dynamic";
 
 export default async function OutreachPage() {
-  const db = getDb();
-  const pitches = await db
-    .select()
-    .from(schema.outreach)
-    .orderBy(desc(schema.outreach.createdAt))
-    .limit(200);
+  let pitches;
+  let leadById;
+  try {
+    const db = getDb();
+    pitches = await db
+      .select()
+      .from(schema.outreach)
+      .orderBy(desc(schema.outreach.createdAt))
+      .limit(200);
 
-  const leadIds = pitches.map((p) => p.leadId);
-  const leads = leadIds.length ? await db.select().from(schema.leads) : [];
-  const leadById = new Map(leads.map((l) => [l.id, l]));
+    // Only the referenced leads — this used to select the whole leads table.
+    const leadIds = [...new Set(pitches.map((p) => p.leadId))];
+    const leads = leadIds.length
+      ? await db.select().from(schema.leads).where(inArray(schema.leads.id, leadIds))
+      : [];
+    leadById = new Map(leads.map((l) => [l.id, l]));
+  } catch (err) {
+    return <DbErrorNotice error={err} />;
+  }
 
   return (
     <div className="space-y-3">

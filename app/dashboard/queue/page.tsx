@@ -1,6 +1,7 @@
 import { desc, eq, inArray } from "drizzle-orm";
 import { getDb, schema } from "@/lib/infra/db/client";
 import ApplyQueue, { type QueueItem } from "@/components/ApplyQueue";
+import DbErrorNotice from "@/components/DbErrorNotice";
 
 export const dynamic = "force-dynamic";
 
@@ -10,6 +11,14 @@ export const dynamic = "force-dynamic";
  * address (LinkedIn and most company portals).
  */
 export default async function QueuePage() {
+  try {
+    return await renderQueue();
+  } catch (err) {
+    return <DbErrorNotice error={err} />;
+  }
+}
+
+async function renderQueue() {
   const db = getDb();
 
   const jobs = await db

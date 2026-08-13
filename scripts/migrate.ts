@@ -19,22 +19,16 @@
 import { createClient } from "@libsql/client";
 import { drizzle } from "drizzle-orm/libsql";
 import { migrate } from "drizzle-orm/libsql/migrator";
+import { resolveDbTarget } from "./db-target";
 
 const MIGRATIONS_FOLDER = "lib/infra/db/migrations";
 
 async function main() {
-  const url = process.env.TURSO_DATABASE_URL ?? "file:./local.db";
-  const authToken = process.env.TURSO_AUTH_TOKEN;
-
-  if (!url.startsWith("file:") && !authToken) {
-    throw new Error(
-      "TURSO_AUTH_TOKEN is not set but TURSO_DATABASE_URL points at a remote " +
-        "database. Run `turso db tokens create <db-name>`."
-    );
-  }
-
-  const target = url.startsWith("file:") ? `${url} (local)` : "Turso (remote)";
-  console.log(`Applying migrations from ${MIGRATIONS_FOLDER} to ${target}`);
+  // resolveDbTarget loads .env itself. tsx does not, and the first version of
+  // this script therefore migrated the local fallback while reporting success,
+  // leaving the remote database on an old schema.
+  const { url, authToken, label } = resolveDbTarget();
+  console.log(`Applying migrations from ${MIGRATIONS_FOLDER} to ${label}`);
 
   const client = createClient({ url, authToken });
   const db = drizzle(client);

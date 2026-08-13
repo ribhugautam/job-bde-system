@@ -2,6 +2,7 @@ import { getDb, schema } from "@/lib/infra/db/client";
 import { desc } from "drizzle-orm";
 import StatusBadge from "@/components/StatusBadge";
 import { StatusSelect } from "@/components/ActionButtons";
+import DbErrorNotice from "@/components/DbErrorNotice";
 
 export const dynamic = "force-dynamic";
 
@@ -10,8 +11,16 @@ const LEAD_STATUSES = [
 ];
 
 export default async function LeadsPage() {
-  const db = getDb();
-  const leads = await db.select().from(schema.leads).orderBy(desc(schema.leads.score)).limit(200);
+  let leads;
+  try {
+    leads = await getDb()
+      .select()
+      .from(schema.leads)
+      .orderBy(desc(schema.leads.score))
+      .limit(200);
+  } catch (err) {
+    return <DbErrorNotice error={err} />;
+  }
 
   return (
     <div className="space-y-3">
