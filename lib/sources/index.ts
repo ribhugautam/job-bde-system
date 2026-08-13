@@ -7,6 +7,10 @@ import {
   fetchWeWorkRemotelyContractLeads,
 } from "./weworkremotely";
 import { fetchUpworkLeads } from "./upwork";
+import { fetchHimalayas } from "./himalayas";
+import { fetchJobicy } from "./jobicy";
+import { fetchAdzuna } from "./adzuna";
+import { fetchLinkedInAlerts } from "./linkedin-alerts";
 
 export async function fetchAllJobs(): Promise<{
   jobs: RawJob[];
@@ -17,6 +21,13 @@ export async function fetchAllJobs(): Promise<{
     safeFetchSource("remotive", fetchRemotive),
     safeFetchSource("arbeitnow", fetchArbeitnow),
     safeFetchSource("wwr", fetchWeWorkRemotely),
+    // Remote-only, worldwide, no key. Best coverage of the set.
+    safeFetchSource("himalayas", fetchHimalayas),
+    safeFetchSource("jobicy", fetchJobicy),
+    // No-ops unless ADZUNA_APP_ID / ADZUNA_APP_KEY are set.
+    safeFetchSource("adzuna", fetchAdzuna),
+    // No-op unless ENABLE_LINKEDIN_ALERTS=1. Reads your own inbox, not LinkedIn.
+    safeFetchSource("linkedin_alert", fetchLinkedInAlerts),
   ]);
   const jobs = results.flatMap((r) => r.items);
   const errors = results.map((r) => r.error).filter(Boolean) as string[];

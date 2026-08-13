@@ -8,6 +8,32 @@ import { getActiveResume } from "./documents";
 import { LINKS } from "./resumeData";
 
 const MATCH_THRESHOLD = 40; // 0-100; below this a job/lead is kept but not drafted
+
+// Sources with no job description (LinkedIn alert emails) can only match
+// skills that appear in the title, so they score lower than full-text sources.
+// See the `sparse` note in lib/sources/types.ts.
+//
+// CALIBRATED, not guessed. Scoring 19 realistic titles as title-only jobs gave
+// a clean bimodal split:
+//     52  Senior Full Stack Engineer (Next.js)
+//     43  AI Engineer / Flutter Developer / React Developer
+//     35  Software Engineer / Founding Engineer / Frontend Engineer
+//     29  Node.js Backend Developer
+//     -- empty band --
+//     17  Python Developer
+//     12  DevOps / Java / QA / Data Analyst / Product Manager / Warehouse
+//      0  Marketing Intern (internship penalty)
+// The noise floor sits at 12-17 and real targets start at 29, so 25 lands in
+// the gap. Note the normal threshold of 40 would have discarded Software
+// Engineer, Founding Engineer, Frontend Engineer and Node.js Backend Developer
+// - four roles that are explicitly in TARGET_ROLES.
+const SPARSE_MATCH_THRESHOLD = Number(
+  process.env.SPARSE_MATCH_THRESHOLD || 25
+);
+
+function thresholdFor(job: { sparse?: boolean }): number {
+  return job.sparse ? SPARSE_MATCH_THRESHOLD : MATCH_THRESHOLD;
+}
 const OUTREACH_DAILY_CAP = Number(process.env.OUTREACH_DAILY_CAP || 10);
 
 // DRY_RUN=1 -> fetch, score, and draft everything into the dashboard, but send
@@ -61,6 +87,7 @@ export async function runDailyPipeline() {
     if (existing.length) continue;
 
     const { score, reasons } = scoreJob(raw);
+    const threshold = thresholdFor(raw);
     const [inserted] = await db
       .insert(schema.jobs)
       .values({
@@ -79,11 +106,11 @@ export async function runDailyPipeline() {
         postedAt: raw.postedAt,
         score,
         scoreReasons: reasons,
-        status: score >= MATCH_THRESHOLD ? "matched" : "found",
+        status: score >= threshold ? "matched" : "found",
       })
       .returning();
     newJobs++;
-    if (score >= MATCH_THRESHOLD) newlyInsertedJobs.push(inserted);
+    if (score >= threshold) newlyInsertedJobs.push(inserted);
   }
 
   // ---- 3. De-dupe + insert new leads --------------------------------------

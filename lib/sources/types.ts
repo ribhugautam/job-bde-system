@@ -12,6 +12,18 @@ export type RawJob = {
   tags?: string[];
   description?: string;
   postedAt?: Date;
+  /**
+   * True when the source gives us only a title/company/link and no job
+   * description - currently just the LinkedIn alert-email connector.
+   *
+   * This matters because scoreJob() matches skill keywords against the
+   * description, so a sparse job can only ever score a fraction of what a
+   * full-text job scores. Comparing them against the same threshold would
+   * silently discard every LinkedIn job. pipeline.ts applies a lower
+   * threshold to sparse jobs instead of inflating their score, so the number
+   * in the dashboard stays honest about what it was computed from.
+   */
+  sparse?: boolean;
 };
 
 export type RawLead = {

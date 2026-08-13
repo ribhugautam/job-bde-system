@@ -27,6 +27,44 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </nav>
       </header>
       <main className="p-6">{children}</main>
+      {/*
+        ATTRIBUTION - REQUIRED, DO NOT REMOVE.
+        Adzuna's terms require a visible "Jobs by Adzuna" credit wherever their
+        results appear. Remotive and RemoteOK both state they will revoke API
+        access without a credit/backlink. Deleting this block risks losing
+        three of the eight job sources.
+      */}
+      <footer className="border-t border-neutral-900 px-6 py-4 text-xs text-neutral-600">
+        Job data from{" "}
+        <a href="https://himalayas.app" className="hover:text-neutral-400">
+          Himalayas
+        </a>
+        ,{" "}
+        <a href="https://jobicy.com" className="hover:text-neutral-400">
+          Jobicy
+        </a>
+        ,{" "}
+        <a href="https://remotive.com" className="hover:text-neutral-400">
+          Remotive
+        </a>
+        ,{" "}
+        <a href="https://remoteok.com" className="hover:text-neutral-400">
+          RemoteOK
+        </a>
+        ,{" "}
+        <a href="https://www.arbeitnow.com" className="hover:text-neutral-400">
+          Arbeitnow
+        </a>
+        ,{" "}
+        <a href="https://weworkremotely.com" className="hover:text-neutral-400">
+          We Work Remotely
+        </a>{" "}
+        and{" "}
+        <a href="https://www.adzuna.com" className="hover:text-neutral-400">
+          Jobs by Adzuna
+        </a>
+        .
+      </footer>
     </div>
   );
 }

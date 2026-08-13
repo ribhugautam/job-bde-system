@@ -59,6 +59,17 @@ export function scoreJob(job: RawJob): { score: number; reasons: string[] } {
     reasons.push("requires 8-12+ years experience - likely mismatch");
   }
 
+  // Sources that give us no description (LinkedIn alert emails) can only match
+  // skills present in the title, so their scores are structurally lower. We do
+  // NOT inflate the number to compensate - the score stays an honest reflection
+  // of the evidence - but we flag it so the dashboard and the lower sparse
+  // threshold in pipeline.ts both make sense to a reader.
+  if (job.sparse) {
+    reasons.unshift(
+      "scored on title only - this source provides no job description"
+    );
+  }
+
   const normalized = Math.max(
     0,
     Math.min(100, Math.round((raw / Math.max(maxPossible * 0.35, 1)) * 100))
