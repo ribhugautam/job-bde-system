@@ -159,7 +159,7 @@ export async function fetchLinkedInAlerts(): Promise<RawJob[]> {
   try {
     // readOnly so we never mark your mail as read or otherwise mutate the
     // mailbox - this connector observes, it does not touch your inbox.
-    const lock = await client.getMailboxLock(mailbox, { readonly: true });
+    const lock = await client.getMailboxLock(mailbox, { readOnly: true });
     try {
       for await (const msg of client.fetch(
         { since, from: "linkedin.com" },
