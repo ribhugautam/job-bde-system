@@ -30,6 +30,13 @@ jobs:
 
       - run: npm run lint
 
+      # `typecheck` is `next typegen && tsc --noEmit`, not bare tsc. Next 16
+      # generates the route-aware globals (LayoutProps, PageProps, RouteContext)
+      # into .next/types during dev/build, and next-env.d.ts — which references
+      # them — is gitignored by design. On a fresh clone neither exists, so bare
+      # `tsc --noEmit` fails on app/layout.tsx even though the code is correct.
+      # It only ever appeared to pass locally because developers had already run
+      # `next dev`. Do not "simplify" this back to plain tsc.
       - run: npm run typecheck
 
       - run: npm run test
