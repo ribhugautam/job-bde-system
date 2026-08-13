@@ -45,12 +45,24 @@ export type StageContext = {
   deadline: Deadline;
   counters: Counters;
   /**
-   * Non-fatal problems. A stage appends here and keeps going; the digest
-   * reports them. Nothing in the pipeline should throw past its stage boundary
-   * for a condition that only affects one row — a single malformed listing must
-   * never cost the other 200.
+   * Things that went WRONG: a source returned 400, a send failed, a row could
+   * not be processed. A stage appends here and keeps going; the digest reports
+   * them. Nothing in the pipeline should throw past its stage boundary for a
+   * condition that only affects one row — a single malformed listing must never
+   * cost the other 200.
    */
   errors: string[];
+
+  /**
+   * Things that are merely WORTH KNOWING: a source is switched off, no resume
+   * is uploaded, a cap was reached. Deliberately separate from `errors`.
+   *
+   * These used to share one list, and the result was a digest reporting "5
+   * errors" when two sources were genuinely broken and three lines were just
+   * describing configuration. Burying real failures among expected ones is how
+   * a broken source goes unnoticed for a month.
+   */
+  notices: string[];
 };
 
 export type StageResult = {
@@ -69,4 +81,8 @@ export function recordError(ctx: StageContext, scope: string, err: unknown) {
   ctx.errors.push(
     `${scope}: ${err instanceof Error ? err.message : String(err)}`
   );
+}
+
+export function recordNotice(ctx: StageContext, message: string) {
+  ctx.notices.push(message);
 }

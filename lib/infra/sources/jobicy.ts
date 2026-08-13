@@ -44,11 +44,24 @@ export async function fetchJobicy(): Promise<RawJob[]> {
   const out: RawJob[] = [];
 
   for (const industry of INDUSTRIES) {
+    // NOTE: no `geo` parameter. Passing `geo=anywhere` returns HTTP 400 with
+    //   {"success":false,"error":"Do not specify 'geo=Anywhere' if you want to
+    //    get a list of all jobs regardless of region"}
+    // Omitting geo entirely is how the API expresses "all regions" — the
+    // previous URL looked reasonable and failed every single run.
     const res = await fetch(
-      `${BASE}?count=${COUNT}&geo=anywhere&industry=${encodeURIComponent(industry)}`,
+      `${BASE}?count=${COUNT}&industry=${encodeURIComponent(industry)}`,
       { headers: { accept: "application/json" } }
     );
-    if (!res.ok) throw new Error(`Jobicy HTTP ${res.status} (industry=${industry})`);
+    if (!res.ok) {
+      // Include the body: this API explains its rejections, and the message is
+      // what identified the geo problem in seconds.
+      const body = await res.text().catch(() => "");
+      throw new Error(
+        `Jobicy HTTP ${res.status} (industry=${industry})` +
+          (body ? ` - ${body.slice(0, 200)}` : "")
+      );
+    }
     const data = await res.json();
     // Envelope is documented loosely; accept either {jobs:[...]} or a bare array.
     const jobs: JobicyJob[] = Array.isArray(data)

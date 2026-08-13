@@ -49,10 +49,12 @@ export async function runIngest(ctx: StageContext): Promise<StageResult> {
 
   ctx.errors.push(...jobResult.errors, ...leadResult.errors);
 
-  // A disabled source is reported, not hidden. "Adzuna found nothing" and
-  // "Adzuna has no API key" must never look the same in the digest.
+  // A disabled source is reported, not hidden — "Adzuna found nothing" and
+  // "Adzuna has no API key" must never look the same. But it is a NOTICE, not
+  // an error: a source you deliberately switched off is working as configured,
+  // and counting it as a failure hides the sources that genuinely broke.
   for (const skipped of [...jobResult.skipped, ...leadResult.skipped]) {
-    ctx.errors.push(`skipped ${skipped}`);
+    ctx.notices.push(`source off - ${skipped}`);
   }
 
   const processedJobs = await ingestJobs(ctx, jobResult.jobs);

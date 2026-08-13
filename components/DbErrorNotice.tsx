@@ -16,7 +16,7 @@ export default function DbErrorNotice({ error }: { error: unknown }) {
     <div className="space-y-3 rounded border border-red-900 bg-red-950/40 p-4 text-sm text-red-200">
       <div>
         <div className="font-semibold">Couldn&apos;t read the database</div>
-        <div className="mt-1 font-mono text-xs break-words text-red-300">
+        <div className="mt-1 font-mono text-xs wrap-break-word text-red-300">
           {reason}
         </div>
       </div>
@@ -30,7 +30,7 @@ export default function DbErrorNotice({ error }: { error: unknown }) {
           </summary>
           <ol className="mt-2 list-decimal space-y-1 pl-5 text-red-300/70">
             {chain.map((m, i) => (
-              <li key={i} className="font-mono break-words">
+              <li key={i} className="font-mono wrap-break-word">
                 {m}
               </li>
             ))}

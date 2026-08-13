@@ -24,8 +24,11 @@ import { buildSummary, sendDigestEmail } from "./stages/digest";
 
 export type RunSummary = {
   dryRun: boolean;
-  counters: Counters;
+  /** Things that broke and need fixing. */
   errors: string[];
+  /** Things worth knowing that are working as configured. */
+  notices: string[];
+  counters: Counters;
   /** True when the clock ran out with work still queued. */
   budgetExhausted: boolean;
   elapsedMs: number;
@@ -66,6 +69,7 @@ export async function runWorker(): Promise<RunSummary> {
     deadline,
     counters: emptyCounters(),
     errors: [],
+    notices: [],
   };
 
   let budgetExhausted = false;
@@ -175,6 +179,7 @@ export async function runWorker(): Promise<RunSummary> {
     dryRun: env.DRY_RUN,
     counters: ctx.counters,
     errors: ctx.errors,
+    notices: ctx.notices,
     budgetExhausted,
     elapsedMs: deadline.elapsed(),
   };

@@ -19,7 +19,10 @@ type Counters = {
 type RunResult = {
   dryRun: boolean;
   counters: Counters;
+  /** Things that broke. */
   errors: string[];
+  /** Things working as configured that are still worth knowing. */
+  notices: string[];
   budgetExhausted: boolean;
   elapsedMs: number;
 };
@@ -131,7 +134,7 @@ export default function RunPipelineButton({ dryRun }: { dryRun: boolean }) {
       {state.status === "error" && (
         <div className="rounded border border-red-900 bg-red-950/40 p-3 text-sm text-red-200">
           <div className="font-semibold">Run failed</div>
-          <div className="mt-1 font-mono text-xs break-words">{state.message}</div>
+          <div className="mt-1 font-mono text-xs wrap-break-word">{state.message}</div>
         </div>
       )}
 
@@ -141,7 +144,8 @@ export default function RunPipelineButton({ dryRun }: { dryRun: boolean }) {
 }
 
 function RunSummary({ result }: { result: RunResult }) {
-  const { counters, errors, budgetExhausted, dryRun, elapsedMs } = result;
+  const { counters, errors, notices, budgetExhausted, dryRun, elapsedMs } =
+    result;
   const moved = LABELS.filter(([key]) => counters[key] > 0);
 
   return (
@@ -177,20 +181,39 @@ function RunSummary({ result }: { result: RunResult }) {
         </p>
       )}
 
+      {/* Problems are shown expanded and in red; notices stay collapsed. Giving
+          both the same weight is what made a run with two dead sources look
+          identical to one with three switched-off ones. */}
       {errors.length > 0 && (
-        <details className="text-xs">
-          <summary className="cursor-pointer text-amber-400">
-            {errors.length} notice{errors.length === 1 ? "" : "s"}
-          </summary>
-          <ul className="mt-2 list-disc space-y-1 pl-5 text-neutral-400">
+        <div className="rounded border border-red-900 bg-red-950/30 p-2 text-xs">
+          <div className="font-semibold text-red-300">
+            {errors.length} problem{errors.length === 1 ? "" : "s"} — these need
+            fixing
+          </div>
+          <ul className="mt-1 list-disc space-y-1 pl-5 text-red-200/90">
             {errors.slice(0, 25).map((e, i) => (
-              <li key={i} className="break-words">
+              <li key={i} className="wrap-break-word">
                 {e}
               </li>
             ))}
             {errors.length > 25 && (
               <li>…and {errors.length - 25} more (see the Overview run log)</li>
             )}
+          </ul>
+        </div>
+      )}
+
+      {notices.length > 0 && (
+        <details className="text-xs">
+          <summary className="cursor-pointer text-neutral-400">
+            {notices.length} thing{notices.length === 1 ? "" : "s"} worth knowing
+          </summary>
+          <ul className="mt-2 list-disc space-y-1 pl-5 text-neutral-400">
+            {notices.map((n, i) => (
+              <li key={i} className="wrap-break-word">
+                {n}
+              </li>
+            ))}
           </ul>
         </details>
       )}

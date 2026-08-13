@@ -44,8 +44,11 @@ export function buildSummary(
     );
   }
 
+  // Errors first and clearly labelled as things that BROKE. Notices are listed
+  // separately below: mixing them made a run with two dead sources and three
+  // switched-off ones read as "5 errors", which is how a real failure hides.
   if (ctx.errors.length) {
-    lines.push("", `Errors and notices (${ctx.errors.length}):`);
+    lines.push("", `PROBLEMS - these need fixing (${ctx.errors.length}):`);
     // Capped: a source that breaks can generate one line per listing, and a
     // digest that is 400 lines of the same message is one nobody reads.
     const shown = ctx.errors.slice(0, 40);
@@ -55,6 +58,19 @@ export function buildSummary(
         `- ...and ${ctx.errors.length - shown.length} more (see the run log in the dashboard)`
       );
     }
+  }
+
+  if (ctx.notices.length) {
+    lines.push("", `For information (${ctx.notices.length}):`);
+    const shown = ctx.notices.slice(0, 20);
+    lines.push(...shown.map((n) => `- ${n}`));
+    if (ctx.notices.length > shown.length) {
+      lines.push(`- ...and ${ctx.notices.length - shown.length} more`);
+    }
+  }
+
+  if (!ctx.errors.length) {
+    lines.push("", "No errors.");
   }
 
   return lines.join("\n");
@@ -82,10 +98,14 @@ export async function sendDigestEmail(
     `Links on file: LinkedIn ${LINKS.linkedin}, Portfolio ${LINKS.portfolio}, Ziro ${LINKS.ziro}`,
   ].join("\n");
 
+  // Only real errors reach the subject. A subject that cries wolf about
+  // configuration notices trains you to stop reading it.
   const subject =
     `Job pipeline - ${c.newJobs} jobs, ${c.newLeads} leads` +
     (c.repliesDetected ? `, ${c.repliesDetected} replies` : "") +
-    (ctx.errors.length ? ` (${ctx.errors.length} notices)` : "");
+    (ctx.errors.length
+      ? ` (${ctx.errors.length} problem${ctx.errors.length === 1 ? "" : "s"})`
+      : "");
 
   const result = await sendDigest(subject, body);
   if (!result.ok) {

@@ -37,9 +37,12 @@ export async function runDispatch(ctx: StageContext): Promise<StageResult> {
 
   const resume = await getActiveResume();
   if (!resume && jobs.length > 0) {
-    ctx.errors.push(
+    // A notice, not an error: nothing broke, and queueing rather than sending
+    // without a CV is the correct behavior. It is still the single most
+    // valuable thing to act on, so the digest lists it first among notices.
+    ctx.notices.push(
       "No resume on file - applications are being queued for review instead of " +
-        "sent. Upload a PDF at /dashboard/settings."
+        "sent. Upload a PDF at /dashboard/settings to enable auto-send."
     );
   }
 
