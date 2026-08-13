@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { saveResume, MAX_RESUME_BYTES } from "@/lib/documents";
+import { saveResume, MAX_RESUME_BYTES } from "@/lib/infra/db/documents";
 
 export const runtime = "nodejs";
 

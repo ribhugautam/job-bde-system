@@ -1,49 +1,87 @@
 import { safeFetchSource, RawJob, RawLead } from "./types";
-import { fetchRemoteOk } from "./remoteok";
-import { fetchRemotive } from "./remotive";
-import { fetchArbeitnow, fetchArbeitnowContractLeads } from "./arbeitnow";
-import {
-  fetchWeWorkRemotely,
-  fetchWeWorkRemotelyContractLeads,
-} from "./weworkremotely";
-import { fetchUpworkLeads } from "./upwork";
-import { fetchHimalayas } from "./himalayas";
-import { fetchJobicy } from "./jobicy";
-import { fetchAdzuna } from "./adzuna";
-import { fetchLinkedInAlerts } from "./linkedin-alerts";
+import { JOB_SOURCES, LEAD_SOURCES, type SourceDefinition } from "./registry";
 
-export async function fetchAllJobs(): Promise<{
-  jobs: RawJob[];
-  errors: string[];
-}> {
-  const results = await Promise.all([
-    safeFetchSource("remoteok", fetchRemoteOk),
-    safeFetchSource("remotive", fetchRemotive),
-    safeFetchSource("arbeitnow", fetchArbeitnow),
-    safeFetchSource("wwr", fetchWeWorkRemotely),
-    // Remote-only, worldwide, no key. Best coverage of the set.
-    safeFetchSource("himalayas", fetchHimalayas),
-    safeFetchSource("jobicy", fetchJobicy),
-    // No-ops unless ADZUNA_APP_ID / ADZUNA_APP_KEY are set.
-    safeFetchSource("adzuna", fetchAdzuna),
-    // No-op unless ENABLE_LINKEDIN_ALERTS=1. Reads your own inbox, not LinkedIn.
-    safeFetchSource("linkedin_alert", fetchLinkedInAlerts),
-  ]);
-  const jobs = results.flatMap((r) => r.items);
-  const errors = results.map((r) => r.error).filter(Boolean) as string[];
-  return { jobs, errors };
+// The fan-out over every configured source. The source list itself lives in
+// registry.ts — this file only knows how to run one.
+//
+// Two guarantees this layer owes the daily cron:
+//
+//   1. FAIL-SAFE. One broken source must never take down the run. Every fetch
+//      goes through safeFetchSource, and even a source's own enabled() call is
+//      wrapped, because it reads getEnv() which throws on a bad configuration.
+//      Whatever goes wrong ends up as a string in `errors`, never a rejection.
+//
+//   2. VISIBILITY. A source that is switched off is reported in `skipped` with
+//      the reason it is off, so "Adzuna found nothing today" and "Adzuna has no
+//      API key" never look the same in the digest.
+
+function describe(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
 }
 
-export async function fetchAllLeads(): Promise<{
-  leads: RawLead[];
-  errors: string[];
-}> {
-  const results = await Promise.all([
-    safeFetchSource("arbeitnow_contract", fetchArbeitnowContractLeads),
-    safeFetchSource("wwr_contract", fetchWeWorkRemotelyContractLeads),
-    safeFetchSource("upwork_rss", fetchUpworkLeads),
-  ]);
-  const leads = results.flatMap((r) => r.items);
-  const errors = results.map((r) => r.error).filter(Boolean) as string[];
-  return { leads, errors };
+type RunResult<T> = { items: T[]; errors: string[]; skipped: string[] };
+
+async function runSources<T>(
+  sources: SourceDefinition<T>[]
+): Promise<RunResult<T>> {
+  const active: SourceDefinition<T>[] = [];
+  const skipped: string[] = [];
+  const errors: string[] = [];
+
+  for (const source of sources) {
+    let on: boolean;
+    try {
+      on = source.enabled();
+    } catch (err) {
+      // A malformed environment makes getEnv() throw. Report it against the
+      // source and keep going rather than aborting the whole run.
+      errors.push(`${source.name}: ${describe(err)}`);
+      continue;
+    }
+
+    if (on) {
+      active.push(source);
+      continue;
+    }
+
+    let reason: string | undefined;
+    try {
+      reason = source.disabledReason?.();
+    } catch (err) {
+      reason = `disabledReason failed: ${describe(err)}`;
+    }
+    skipped.push(reason ? `${source.name}: ${reason}` : source.name);
+  }
+
+  const results = await Promise.all(
+    active.map((source) => safeFetchSource(source.name, () => source.fetch()))
+  );
+
+  return {
+    items: results.flatMap((r) => r.items),
+    errors: [...errors, ...(results.map((r) => r.error).filter(Boolean) as string[])],
+    skipped,
+  };
 }
+
+/**
+ * `sources` is a test seam: production calls this with no arguments and gets
+ * the real registry. Tests pass fakes so no test ever touches the network.
+ */
+export async function fetchAllJobs(
+  sources: SourceDefinition<RawJob>[] = JOB_SOURCES
+): Promise<{ jobs: RawJob[]; errors: string[]; skipped: string[] }> {
+  const { items, errors, skipped } = await runSources(sources);
+  return { jobs: items, errors, skipped };
+}
+
+/** See the note on `sources` in fetchAllJobs. */
+export async function fetchAllLeads(
+  sources: SourceDefinition<RawLead>[] = LEAD_SOURCES
+): Promise<{ leads: RawLead[]; errors: string[]; skipped: string[] }> {
+  const { items, errors, skipped } = await runSources(sources);
+  return { leads: items, errors, skipped };
+}
+
+export { JOB_SOURCES, LEAD_SOURCES };
+export type { SourceDefinition, SourceKind } from "./registry";

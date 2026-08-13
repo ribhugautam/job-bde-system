@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
-import { getDb, schema } from "@/lib/db/client";
-import { sendMail } from "@/lib/mailer";
+import { getDb, schema } from "@/lib/infra/db/client";
+import { sendMail } from "@/lib/infra/mail/send";
+import { getEnv } from "@/lib/config/env";
+import { nextFollowUpDue } from "@/lib/pipeline/followup-schedule";
 
 export const dynamic = "force-dynamic";
 
@@ -38,9 +40,19 @@ export async function POST(req: NextRequest) {
   });
 
   if (result.ok) {
+    const sentAt = new Date();
     await db
       .update(schema.applications)
-      .set({ status: "sent", sentAt: new Date(), sentTo: to })
+      .set({
+        status: "sent",
+        sentAt,
+        sentTo: to,
+        // Without this the reply matcher has nothing to anchor on, and the
+        // follow-up sequence would keep emailing someone who already replied.
+        // It fails silently if omitted, which is why it is not optional here.
+        messageId: result.messageId,
+        nextFollowUpAt: nextFollowUpDue(0, sentAt, getEnv()),
+      })
       .where(eq(schema.applications.id, applicationId));
     if (job) {
       await db

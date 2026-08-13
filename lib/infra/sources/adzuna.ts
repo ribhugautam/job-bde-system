@@ -1,3 +1,4 @@
+import { getEnv } from "@/lib/config/env";
 import { RawJob, extractApplyEmail } from "./types";
 
 // Adzuna search API.
@@ -48,10 +49,19 @@ function salaryText(j: AdzunaJob): string | undefined {
 }
 
 export async function fetchAdzuna(): Promise<RawJob[]> {
-  const appId = process.env.ADZUNA_APP_ID;
-  const appKey = process.env.ADZUNA_APP_KEY;
-  // Not configured is not an error - just skip the source silently.
-  if (!appId || !appKey) return [];
+  const { ADZUNA_APP_ID: appId, ADZUNA_APP_KEY: appKey } = getEnv();
+  // Whether Adzuna runs at all is the registry's call (registry.ts), which
+  // skips this source - visibly, with the missing key named - when either half
+  // of the pair is absent. Reaching here unconfigured means the registry was
+  // bypassed, so this is an invariant, not a silent skip: safeFetchSource turns
+  // it into a reported error instead of an empty result that looks like "no
+  // jobs today".
+  if (!appId || !appKey) {
+    throw new Error(
+      "fetchAdzuna called without ADZUNA_APP_ID/ADZUNA_APP_KEY - the registry's " +
+        "enabled() should have skipped this source."
+    );
+  }
 
   const seen = new Set<string>();
   const out: RawJob[] = [];

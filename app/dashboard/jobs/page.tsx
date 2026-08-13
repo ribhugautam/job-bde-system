@@ -1,4 +1,4 @@
-import { getDb, schema } from "@/lib/db/client";
+import { getDb, schema } from "@/lib/infra/db/client";
 import { desc } from "drizzle-orm";
 import StatusBadge from "@/components/StatusBadge";
 import { StatusSelect } from "@/components/ActionButtons";

@@ -32,6 +32,10 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+# ...but the template must be in the repo: README's setup steps use it as the
+# checklist of what to configure, and a checklist nobody can see is worthless.
+# It contains keys and comments only, never values.
+!.env.example
 
 # vercel
 .vercel

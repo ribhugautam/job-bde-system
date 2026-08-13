@@ -182,3 +182,83 @@ any of these today.
 - Any anti-bot detection evasion (fingerprint spoofing, stealth drivers, proxy
   rotation).
 - Automated LinkedIn connection requests or InMail.
+
+---
+
+# As-built notes
+
+Deviations from the design above, and decisions taken during implementation
+that are worth not re-litigating.
+
+## `drizzle-kit migrate` was replaced
+
+`drizzle-kit migrate` silently no-ops against a `file:` URL under this config:
+it exits 0, prints a spinner, and creates nothing. This was caught only because
+the smoke test failed with "no such table" *after* migrate reported success.
+
+`npm run db:migrate` now runs `scripts/migrate.ts`, which uses drizzle's
+programmatic migrator, builds its client the same way the app does, and reads
+the schema back before claiming success. `db:generate` (drizzle-kit) is
+unaffected and still generates the SQL.
+
+## MATCH_THRESHOLD stays at 40
+
+This was nearly changed to 30 and should not be. The reasoning that suggested 30
+— "noise sits at 0, targets at 40, so the bar is balanced on a knife edge in an
+empty band" — rested on a noise sample containing only obviously-unrelated jobs
+(warehouse, marketing) that name no technology at all. Those do score 0.
+
+The category that sample missed is tech-*adjacent* roles: recruiter, developer
+advocate, technical writer, product manager, QA, UX, support, customer success.
+Their descriptions name-drop React/TypeScript/Node exactly like a real posting,
+so they accumulate genuine skill points and fill the 29–46 band densely.
+
+Measured, moving 40 → 30 would admit 3 real sparse targets and 6 non-engineering
+postings. A 1:2 trade against the user. **Keep 40.**
+
+## Known limitations in scoring
+
+These are recorded rather than fixed, because each needs real outcome data to
+tune and guessing would make things worse:
+
+- **Tech-adjacent roles clear the bar.** `Developer Advocate` (46) and
+  `QA Engineer` (43) pass at 40 today on skill points alone. Deliberately not
+  excluded: whether those are interesting roles is the user's call, not the
+  system's. The `ROLE_VETO_PHRASES` list covers only unambiguously
+  non-engineering titles (sales, marketing, recruiting, account executive,
+  customer success, solutions consultant).
+- **Six real targets score 23 as title-only rows** — bare `Software Engineer`,
+  `AI Engineer`, `Founding Engineer`, `Front-End Developer` and similar. No
+  threshold rescues them without admitting everything in 23–29 too. The fix is
+  enrichment recovering a description, which is why the enrich stage exists.
+- **The score saturates.** Total skill weight is 99 against a denominator of
+  `99 * 0.35`, so a plainly-good posting hits 100 and there is no headroom to
+  distinguish good from outstanding.
+- **`scoreJob` and `scoreLead` use incomparable 0–100 scales.** Never sort them
+  in one ranked list.
+- **The role bonus is the better lever than the threshold.** What separates a
+  target from a tech-adjacent role is the title, and only targets receive the
+  role bonus — so raising it discriminates, while lowering the threshold
+  amplifies pure skill accumulation, which is the signal the noise shares.
+
+## Bugs found during implementation
+
+Recorded because each was a silent failure — nothing would have reported them:
+
+- **Substring alias matching.** `"ts"` matched *documents*, `"git"` matched
+  *legitimate*, `"ml"` matched *html*. A sales job scored 26 claiming TypeScript,
+  RAG and Git. Fixed with whole-token matching; the noise floor fell to 0.
+- **Reply detection had three false-positive paths**, each of which would have
+  cancelled follow-up sequences invisibly: bounce notices quote the original in
+  `References` so a hard bounce read as engagement; out-of-office replies marked
+  threads answered; and a wider `IMAP_MAILBOX` would have made the system's own
+  follow-ups self-match.
+- **The LinkedIn navigation filter was a prefix match**, discarding real titles
+  beginning with manage / help / settings / linkedin ("Manager, Platform
+  Engineering", "Help Desk Engineer").
+- **LinkedIn jobs were hardcoded `remote: true`**, giving every hybrid and
+  on-site listing a remote bonus it had not earned.
+- **A flag-parsing mismatch**: `alerts.ts` compared against the literal string
+  `"1"` while the source registry used the validated boolean, so
+  `ENABLE_LINKEDIN_ALERTS=true` would enable the source and then silently yield
+  nothing.

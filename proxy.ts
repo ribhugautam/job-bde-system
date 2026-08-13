@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { SESSION_COOKIE, getAuthConfig, verifySessionToken } from "@/lib/auth";
+import { SESSION_COOKIE, getAuthConfig, verifySessionToken } from "@/lib/infra/auth";
 
 /**
  * Deny by default.

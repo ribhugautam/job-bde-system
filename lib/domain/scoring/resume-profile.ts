@@ -1,12 +1,12 @@
 // Structured version of Ribhu Gautam's resume, used for:
-//  - scoring/matching jobs & leads (lib/matcher.ts)
-//  - populating cover letters & pitch emails (lib/drafts.ts)
+//  - scoring/matching jobs & leads (lib/domain/scoring/score.ts)
+//  - populating cover letters & pitch emails (lib/domain/drafting/compose.ts)
 //
 // LINKEDIN: confirmed by Ribhu as /in/ribhugautam. The "ribhugutam" spelling
 // seen earlier was a typo.
 //
 // GITHUB: still listed here as data, but deliberately NOT used in any outreach
-// email — see the comment on SIGNATURE in lib/drafts.ts.
+// email — see the comment on SIGNATURE in lib/domain/drafting/compose.ts.
 export const LINKS = {
   linkedin: "https://www.linkedin.com/in/ribhugautam",
   github: "https://github.com/ribhugautam",
@@ -74,7 +74,14 @@ export const SKILLS: { name: string; weight: number; aliases?: string[] }[] = [
 
   // Intermediate
   { name: "express.js", weight: 2, aliases: ["express"] },
-  { name: "sql", weight: 2 },
+  // Skills match on whole tokens (see tokenPattern in score.ts), so "sql" no
+  // longer fires inside "postgresql" or "mysql". Those two are handled on
+  // purpose and differently:
+  //   - postgresql has its own weighted entry below, so crediting "sql" as
+  //     well would count one piece of evidence twice. Left unaliased.
+  //   - mysql has no entry of its own and is unambiguously SQL work, so it is
+  //     listed here rather than being silently dropped.
+  { name: "sql", weight: 2, aliases: ["mysql"] },
   { name: "python", weight: 2 },
   { name: "docker", weight: 2 },
   { name: "aws s3", weight: 1 },
@@ -100,10 +107,10 @@ export const SKILLS: { name: string; weight: number; aliases?: string[] }[] = [
 //   placeholder for freelance / part-time / contract. Set it correctly before
 //   this ever gets rendered anywhere public.
 //
-// Only EXPERIENCE[0] is used in outreach (lib/drafts.ts). The entries below it
-// are reference data for now — but if you ever widen drafts.ts to quote more
-// than the current role, the concurrency has to be visible or it reads as
-// three simultaneous full-time jobs.
+// Only EXPERIENCE[0] is used in outreach (lib/domain/drafting/compose.ts). The
+// entries below it are reference data for now — but if you ever widen
+// compose.ts to quote more than the current role, the concurrency has to be
+// visible or it reads as three simultaneous full-time jobs.
 export const EXPERIENCE = [
   {
     role: "Software Engineer - M2",
@@ -195,6 +202,47 @@ export const TARGET_ROLES = [
   "llm engineer",
   "applied ai engineer",
   "founding engineer",
+];
+
+// POLICY, not matching.
+//
+// Target roles are matched as an ordered subsequence of the title's words, so
+// "Software Sales Engineer" satisfies "software engineer" exactly the way
+// "Node.js Backend Developer" satisfies "node.js developer" - one interposed
+// word in both cases. No tokenising rule can separate them; the only thing
+// that distinguishes the two is knowing that "sales" is not an engineering
+// job. That is a judgement about which jobs Ribhu wants, so it lives here as
+// explicit policy rather than being smuggled into the matcher.
+//
+// Every phrase below names a role that speaks engineering vocabulary while not
+// being an engineering job. A veto phrase anywhere in the title is FATAL: the
+// job scores 0 and cannot clear any threshold, however much React its
+// description name-drops.
+//
+// It has to be fatal rather than a deduction. These postings never earned the
+// target-role bonus in the first place, so withholding it was a no-op for
+// exactly the titles this list exists to stop - a "Technical Recruiter" advert
+// listing React, TypeScript and Node.js scored 46 on skill evidence alone and
+// sailed into the apply queue. The skill words really are in the description;
+// they just do not make the role relevant.
+//
+// This list is intentionally narrow. Roles that are arguably engineering-
+// adjacent - Developer Advocate, QA Engineer, Technical Writer, Product
+// Manager, DevOps Engineer - are deliberately NOT here. Whether those are
+// worth applying to is the candidate's call, not this file's, and they are
+// left to score on their merits.
+//
+// Because a veto is fatal, the guarantee that it suppresses no entry in
+// TARGET_ROLES is load-bearing. Two tests enforce it.
+export const ROLE_VETO_PHRASES = [
+  "sales",
+  "marketing",
+  "recruiter",
+  "recruiting",
+  "account executive",
+  "business development",
+  "customer success",
+  "solutions consultant",
 ];
 
 // Contract/freelance keywords used when scoring `leads`.

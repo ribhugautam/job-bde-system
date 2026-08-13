@@ -1,18 +1,54 @@
-import { LINKS } from "@/lib/resumeData";
-import { getActiveResume } from "@/lib/documents";
+import { LINKS } from "@/lib/domain/scoring/resume-profile";
+import { getActiveResume } from "@/lib/infra/db/documents";
 import ResumeUpload from "@/components/ResumeUpload";
 
 export const dynamic = "force-dynamic";
 
-function EnvRow({ name, hint }: { name: string; hint: string }) {
+/**
+ * `fallback` is the value the app uses when the variable is unset, for the ones
+ * that have a documented default. Without it a var like ENABLE_LINKEDIN_ENRICH
+ * — which is ON unless you turn it off — renders as a red "missing", which
+ * reads as broken when the feature is in fact running.
+ *
+ * Only the required variables show red. Everything else is amber ("default") or
+ * grey ("not set"), so the red items are exactly the ones worth acting on.
+ */
+function EnvRow({
+  name,
+  hint,
+  required,
+  fallback,
+}: {
+  name: string;
+  hint: string;
+  required?: boolean;
+  fallback?: string;
+}) {
   const set = Boolean(process.env[name]);
+
+  let label: string;
+  let tone: string;
+  if (set) {
+    label = "set";
+    tone = "text-emerald-400";
+  } else if (fallback !== undefined) {
+    label = `default: ${fallback}`;
+    tone = "text-amber-400";
+  } else if (required) {
+    label = "missing";
+    tone = "text-red-400";
+  } else {
+    label = "not set";
+    tone = "text-neutral-500";
+  }
+
   return (
-    <div className="flex items-center justify-between border-b border-neutral-900 py-2 text-sm">
-      <div>
+    <div className="flex items-center justify-between gap-3 border-b border-neutral-900 py-2 text-sm">
+      <div className="min-w-0">
         <div className="font-mono text-xs">{name}</div>
         <div className="text-xs text-neutral-500">{hint}</div>
       </div>
-      <span className={set ? "text-emerald-400" : "text-red-400"}>{set ? "set" : "missing"}</span>
+      <span className={`shrink-0 text-xs ${tone}`}>{label}</span>
     </div>
   );
 }
@@ -73,17 +109,28 @@ export default async function SettingsPage() {
       <div>
         <h2 className="mb-2 text-sm font-semibold text-neutral-300">Environment</h2>
         <div className="rounded border border-neutral-800 p-3">
-          <EnvRow name="TURSO_DATABASE_URL" hint="libSQL/Turso database URL (unset = local ./local.db file)" />
+          <EnvRow required name="APP_PASSWORD" hint="Unlocks the whole app; min 12 chars or every route serves 503" />
+          <EnvRow required name="AUTH_SECRET" hint="Signs the session cookie; openssl rand -hex 32" />
+          <EnvRow required name="CRON_SECRET" hint="Protects /api/cron/daily - the one route outside the password gate" />
+          <EnvRow name="TURSO_DATABASE_URL" hint="libSQL/Turso database URL" fallback="local ./local.db file" />
           <EnvRow name="TURSO_AUTH_TOKEN" hint="Turso token; required whenever the URL is remote" />
-          <EnvRow name="GMAIL_USER" hint="Gmail address that sends applications & outreach" />
-          <EnvRow name="GMAIL_APP_PASSWORD" hint="16-char app password, not your normal Gmail password" />
-          <EnvRow name="OWNER_EMAIL" hint="Where the daily digest gets sent (defaults to GMAIL_USER)" />
-          <EnvRow name="CRON_SECRET" hint="Protects /api/cron/daily from public calls" />
-          <EnvRow name="ANTHROPIC_API_KEY" hint="Optional - AI-written drafts instead of the template" />
-          <EnvRow name="OUTREACH_DAILY_CAP" hint="Optional - defaults to 10 auto-sent pitches/day" />
-          <EnvRow name="ENABLE_UPWORK_RSS" hint="Optional, experimental - set to 1 only after verifying the feed" />
-          <EnvRow name="NEXT_PUBLIC_APP_URL" hint="Your deployed URL, used in the digest email" />
-          <EnvRow name="DRY_RUN" hint="Set to 1 to draft without sending any email (see banner above)" />
+          <EnvRow required name="GMAIL_USER" hint="Gmail address that sends applications, outreach and follow-ups" />
+          <EnvRow required name="GMAIL_APP_PASSWORD" hint="16-char app password, not your normal Gmail password" />
+          <EnvRow name="OWNER_EMAIL" hint="Where the digest gets sent" fallback="GMAIL_USER" />
+          <EnvRow name="DRY_RUN" hint="Draft everything, send nothing - see the banner above" fallback="0 (live)" />
+          <EnvRow name="MATCH_THRESHOLD" hint="Fit score a job must reach to be drafted" fallback="40" />
+          <EnvRow name="ENABLE_LINKEDIN_ALERTS" hint="Reads LinkedIn job alerts from your own inbox over IMAP, read-only" fallback="off" />
+          <EnvRow name="ENABLE_LINKEDIN_ENRICH" hint="Recovers descriptions from the public LinkedIn page (no login, no session)" fallback="on" />
+          <EnvRow name="LINKEDIN_ENRICH_DAILY_CAP" hint="Max public page fetches per day" fallback="80" />
+          <EnvRow name="ENABLE_FOLLOWUPS" hint="One nudge at day 4, a final at day 10, then stop permanently" fallback="on" />
+          <EnvRow name="FOLLOWUP_DAILY_CAP" hint="Max follow-up emails per day" fallback="20" />
+          <EnvRow name="WORKER_TIME_BUDGET_MS" hint="Worker stops cleanly here and resumes next run" fallback="45000" />
+          <EnvRow name="ANTHROPIC_API_KEY" hint="AI-written drafts instead of the built-in templates" />
+          <EnvRow name="ADZUNA_APP_ID" hint="Adzuna source is skipped unless BOTH key vars are set" />
+          <EnvRow name="ADZUNA_APP_KEY" hint="See above" />
+          <EnvRow name="OUTREACH_DAILY_CAP" hint="Max cold pitches auto-sent per day" fallback="10" />
+          <EnvRow name="ENABLE_UPWORK_RSS" hint="Experimental - enable only after verifying the feed URL" fallback="off" />
+          <EnvRow name="NEXT_PUBLIC_APP_URL" hint="Your deployed URL, used in the digest email's links" />
         </div>
       </div>
 
@@ -94,7 +141,7 @@ export default async function SettingsPage() {
           <div className="text-neutral-500">
             GitHub: {LINKS.github}{" "}
             <span className="text-amber-400 text-xs">
-              (excluded from all outreach — pinned repos are student projects. Repin, then re-add it in lib/drafts.ts)
+              (excluded from all outreach — pinned repos are student projects. Repin, then re-add it in lib/domain/drafting/compose.ts)
             </span>
           </div>
           <div>Portfolio: {LINKS.portfolio}</div>
@@ -102,18 +149,30 @@ export default async function SettingsPage() {
           <div>Email: {LINKS.email}</div>
         </div>
         <p className="mt-2 text-xs text-neutral-500">
-          Edit lib/resumeData.ts to fix any of these — they flow straight into every cover letter and pitch.
+          Edit lib/domain/scoring/resume-profile.ts to fix any of these — they flow straight into every cover letter and pitch.
         </p>
       </div>
 
       <div>
         <h2 className="mb-2 text-sm font-semibold text-neutral-300">Manual run</h2>
         <p className="text-sm text-neutral-400">
-          Trigger the daily pipeline on demand (useful for testing) by visiting:
+          Trigger the pipeline on demand. The secret goes in the{" "}
+          <span className="font-mono text-xs">Authorization</span> header — it is
+          deliberately not accepted as a query param, because query strings are
+          written to Vercel&apos;s request logs in plaintext.
         </p>
-        <pre className="mt-2 rounded bg-neutral-900 p-3 text-xs text-neutral-300">
-          GET {process.env.NEXT_PUBLIC_APP_URL || "https://your-app.vercel.app"}/api/cron/daily?secret=YOUR_CRON_SECRET
+        <pre className="mt-2 overflow-x-auto rounded bg-neutral-900 p-3 text-xs text-neutral-300">
+          curl -H &quot;Authorization: Bearer $CRON_SECRET&quot; \{"\n"}
+          {"  "}
+          {process.env.NEXT_PUBLIC_APP_URL || "https://your-app.vercel.app"}
+          /api/cron/daily
         </pre>
+        <p className="mt-2 text-xs text-neutral-500">
+          The worker is resumable: it drains queued work until it runs out of
+          time budget, then stops cleanly and continues on the next run. Calling
+          this repeatedly is safe and is how you flush a backlog faster than the
+          cron would.
+        </p>
       </div>
     </div>
   );

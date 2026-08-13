@@ -1,5 +1,5 @@
 import { LoginForm } from "./LoginForm";
-import { safeNextPath } from "@/lib/auth";
+import { safeNextPath } from "@/lib/infra/auth";
 
 export const dynamic = "force-dynamic";
 

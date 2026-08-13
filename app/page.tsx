@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { CANDIDATE, LINKS } from "@/lib/resumeData";
+import { CANDIDATE, LINKS } from "@/lib/domain/scoring/resume-profile";
 
 export default function Home() {
   return (

@@ -1,0 +1,14 @@
+<!-- The glued-text trap in its purest form.
+
+     Company and location sit in adjacent <div>s with NOTHING between the
+     closing and opening tag - no newline, no space. cheerio's .text() on the
+     enclosing <td> therefore returns "VercelRemote, Worldwide" as one string.
+     The lines() helper in alerts.ts exists solely to stop that from becoming
+     the company name. DO NOT REFORMAT THIS FILE. -->
+<table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%">
+<tr>
+<td valign="top">
+<div><a href="https://www.linkedin.com/comm/jobs/view/3812345678/?trackingId=Rr8%2Bd1kPQ3yq9m0Yb%2FVzZA%3D%3D&amp;refId=1a2b3c-m9x8w7v6-qr">Senior Full Stack Engineer</a></div><div>Vercel</div><div>Remote, Worldwide</div><div>2 days ago</div>
+</td>
+</tr>
+</table>

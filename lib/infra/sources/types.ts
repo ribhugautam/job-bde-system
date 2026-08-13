@@ -1,42 +1,9 @@
-export type RawJob = {
-  source: string;
-  sourceId: string;
-  title: string;
-  company: string;
-  companyUrl?: string;
-  url: string;
-  applyEmail?: string;
-  location?: string;
-  remote?: boolean;
-  salaryText?: string;
-  tags?: string[];
-  description?: string;
-  postedAt?: Date;
-  /**
-   * True when the source gives us only a title/company/link and no job
-   * description - currently just the LinkedIn alert-email connector.
-   *
-   * This matters because scoreJob() matches skill keywords against the
-   * description, so a sparse job can only ever score a fraction of what a
-   * full-text job scores. Comparing them against the same threshold would
-   * silently discard every LinkedIn job. pipeline.ts applies a lower
-   * threshold to sparse jobs instead of inflating their score, so the number
-   * in the dashboard stays honest about what it was computed from.
-   */
-  sparse?: boolean;
-};
+import { RawJob, RawLead } from "@/lib/domain/types";
 
-export type RawLead = {
-  source: string;
-  sourceId: string;
-  title: string;
-  clientOrCompany?: string;
-  url: string;
-  contactEmail?: string;
-  budgetText?: string;
-  description?: string;
-  postedAt?: Date;
-};
+// RawJob/RawLead are domain shapes and now live in lib/domain/types.ts. They are
+// re-exported here so the source fetchers can keep importing them from "./types"
+// alongside the helpers below.
+export type { RawJob, RawLead };
 
 // A source fetcher must never throw past this boundary - the daily cron
 // keeps going even if one source is down or has changed its API shape.

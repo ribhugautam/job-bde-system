@@ -8,7 +8,7 @@
  */
 import { readFileSync } from "node:fs";
 import { basename, resolve } from "node:path";
-import { saveResume } from "../lib/documents";
+import { saveResume } from "../lib/infra/db/documents";
 
 async function main() {
   const arg = process.argv[2];

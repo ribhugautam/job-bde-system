@@ -5,7 +5,7 @@ import {
   createSessionToken,
   getAuthConfig,
   passwordMatches,
-} from "@/lib/auth";
+} from "@/lib/infra/auth";
 
 export const dynamic = "force-dynamic";
 

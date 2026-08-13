@@ -1,5 +1,5 @@
 import { and, desc, eq } from "drizzle-orm";
-import { getDb, schema } from "./db/client";
+import { getDb, schema } from "./client";
 
 // ATS resume size limits are tight — SmartRecruiters caps attachments at 2MB,
 // and several others sit around 5MB. We cap the DECODED file at 2MB so the

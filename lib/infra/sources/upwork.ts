@@ -8,13 +8,15 @@ import { RawLead } from "./types";
 // set ENABLE_UPWORK_RSS=1 in your env once you've confirmed the feed still
 // loads (paste the URL in a browser first) and verified the item shape
 // still matches what's parsed below.
+//
+// That flag is enforced by the registry (registry.ts), not in here: the old
+// in-fetcher `return []` made a disabled source look identical to a source
+// that ran and found nothing.
 const SEARCH_TERMS = ["react developer", "next.js", "flutter developer", "ai agent developer"];
 
 const parser = new Parser();
 
 export async function fetchUpworkLeads(): Promise<RawLead[]> {
-  if (process.env.ENABLE_UPWORK_RSS !== "1") return [];
-
   const out: RawLead[] = [];
   for (const term of SEARCH_TERMS) {
     const url = `https://www.upwork.com/ab/feed/jobs/rss?q=${encodeURIComponent(

@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A second push to the same branch cancels the first — no point burning minutes
+# on a commit that has already been superseded.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # `ci` not `install`: fails on a lockfile that has drifted from
+      # package.json. That drift is exactly what broke this repo before — three
+      # declared dependencies were never installed, so typecheck failed on a
+      # clean clone while passing for anyone with a stale node_modules.
+      - run: npm ci
+
+      - run: npm run lint
+
+      - run: npm run typecheck
+
+      - run: npm run test
+
+      # No env vars are provided on purpose. The build must succeed without
+      # credentials; anything that reads config at module scope rather than
+      # lazily at request time will fail here, which is the point.
+      - run: npm run build
+
+      # Catches a schema edit committed without its generated migration.
+      - name: Check migrations are up to date
+        run: |
+          npm run db:generate
+          if [ -n "$(git status --porcelain lib/infra/db/migrations)" ]; then
+            echo "::error::Schema changed but migrations were not regenerated."
+            echo "Run 'npm run db:generate' and commit the result."
+            git --no-pager diff -- lib/infra/db/migrations
+            exit 1
+          fi

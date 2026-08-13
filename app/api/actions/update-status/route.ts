@@ -1,17 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
-import { getDb, schema } from "@/lib/db/client";
+import { getDb, schema } from "@/lib/infra/db/client";
+// Single source of truth — these lists were previously duplicated here and in
+// the dashboard pages, and had already drifted apart from each other.
+import { JOB_STATUSES, LEAD_STATUSES } from "@/lib/pipeline/state";
 
 export const dynamic = "force-dynamic";
-
-const JOB_STATUSES = [
-  "found", "matched", "ready_for_review", "sent", "responded",
-  "interview", "offer", "rejected", "ignored",
-];
-const LEAD_STATUSES = [
-  "found", "matched", "pitched", "sent", "responded",
-  "won", "lost", "ignored",
-];
 
 export async function POST(req: NextRequest) {
   const { entity, id, status } = await req.json();

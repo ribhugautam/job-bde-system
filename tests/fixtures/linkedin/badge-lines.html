@@ -1,0 +1,28 @@
+<!-- Badges between the title and the company. LinkedIn adds these freely, and
+     because company/location are read positionally, an unfiltered badge shifts
+     every field by one: company becomes "Promoted" and location becomes the
+     company name. That fails WRONG rather than empty, and nothing downstream
+     can tell.
+
+     Card 1: three badges before the company, two counters after the location.
+             All must be skipped; company and location must still resolve.
+     Card 2: the line after the title is a COMBINED metadata line that no badge
+             pattern will ever match exactly. The parser must refuse to call it
+             the company and fall back to "Unknown" rather than lie. -->
+<table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%">
+
+<tr>
+<td valign="top">
+<div><a href="https://www.linkedin.com/comm/jobs/view/3812345678/?trackingId=Rr8%3D%3D&amp;trk=eml-email_job_alert_digest_01-job_card-0-jobcard_title">Senior Full Stack Engineer</a></div><div>Promoted</div><div>Easy Apply</div><div>Actively recruiting</div><div>Vercel</div><div>Remote, Worldwide</div><div>Be an early applicant</div><div>47 applicants</div>
+<div><a href="https://www.linkedin.com/comm/jobs/view/3812345678/?trackingId=Rr8%3D%3D&amp;trk=eml-email_job_alert_digest_01-job_card-0-jobcard_cta">View job</a></div>
+</td>
+</tr>
+
+<tr>
+<td valign="top">
+<div><a href="https://www.linkedin.com/comm/jobs/view/3900112233/?trackingId=9kL%3D%3D&amp;trk=eml-email_job_alert_digest_01-job_card-1-jobcard_title">Staff Backend Engineer</a></div><div>3 days ago &#8226; 128 applicants &#8226; Actively reviewing</div><div>Linear</div><div>London, England, United Kingdom</div>
+<div><a href="https://www.linkedin.com/comm/jobs/view/3900112233/?trackingId=9kL%3D%3D&amp;trk=eml-email_job_alert_digest_01-job_card-1-jobcard_cta">View job</a></div>
+</td>
+</tr>
+
+</table>

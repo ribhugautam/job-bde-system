@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
-import { getDb, schema } from "@/lib/db/client";
-import { sendMail } from "@/lib/mailer";
+import { getDb, schema } from "@/lib/infra/db/client";
+import { sendMail } from "@/lib/infra/mail/send";
+import { getEnv } from "@/lib/config/env";
+import { nextFollowUpDue } from "@/lib/pipeline/followup-schedule";
 
 export const dynamic = "force-dynamic";
 
@@ -34,9 +36,18 @@ export async function POST(req: NextRequest) {
   });
 
   if (result.ok) {
+    const sentAt = new Date();
     await db
       .update(schema.outreach)
-      .set({ status: "sent", sentAt: new Date(), sentTo: to })
+      .set({
+        status: "sent",
+        sentAt,
+        sentTo: to,
+        // See the note in send-application: omitting this breaks reply
+        // detection silently rather than loudly.
+        messageId: result.messageId,
+        nextFollowUpAt: nextFollowUpDue(0, sentAt, getEnv()),
+      })
       .where(eq(schema.outreach.id, outreachId));
     if (lead) {
       await db
