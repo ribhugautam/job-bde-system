@@ -96,6 +96,37 @@ Drizzle (not Prisma) is used as the ORM - Prisma's engine binaries are fetched f
 native binary) was used instead. This isn't a compromise - Drizzle's SQLite support is first-class.
 You also get a free table-editor UI with `npm run db:studio`.
 
+## Access control
+
+The whole deployment is private. `proxy.ts` gates every route and every API
+endpoint behind a single password; unauthenticated browsers are redirected to
+`/login` and unauthenticated API calls get a `401`. This matters because the
+dashboard exposes your resume, your inbox-derived job alerts, and the ability to
+send email as you.
+
+- **`APP_PASSWORD`** - the one password that unlocks the app. Minimum 12 characters.
+- **`AUTH_SECRET`** - random string (`openssl rand -hex 32`) used to sign the session
+  cookie. Rotating it instantly signs out every browser.
+
+Both are required. If either is missing or `APP_PASSWORD` is shorter than 12 characters,
+the app **fails closed**: every route returns `503`, including the login page. It will
+never fall open.
+
+Signing in sets an `HttpOnly`, `Secure`, `SameSite=Lax` cookie valid for 30 days,
+holding only an expiry timestamp and its HMAC - there is no server-side session store.
+"Sign out" in the dashboard header clears it.
+
+Two routes are intentionally outside the password gate:
+
+- `/login` and `/api/auth/*` - otherwise you could never sign in.
+- `/api/cron/daily` - Vercel Cron cannot send your browser cookie. It is protected
+  separately by `CRON_SECRET` (bearer header, fail-closed if unset). **This is the one
+  publicly reachable route that does real work, so `CRON_SECRET` must be a long random
+  value, not a guessable one.**
+
+There is no password reset and no second user. If you lose the password, change
+`APP_PASSWORD` in Vercel and redeploy.
+
 ## Deploying
 
 1. **Push to GitHub.** Unzip this project, `git init` if needed, create a new empty repo on your
@@ -118,8 +149,12 @@ You also get a free table-editor UI with `npm run db:studio`.
 6. **Redeploy** so the new env vars take effect.
 7. **Verify**: open `/dashboard/settings` on your deployed URL to confirm every env var shows
    "set", then manually trigger a run once via
-   `GET https://your-app.vercel.app/api/cron/daily?secret=YOUR_CRON_SECRET` and check
-   `/dashboard` for the run log and your inbox for the digest.
+   ```bash
+   curl -H "Authorization: Bearer $CRON_SECRET" https://your-app.vercel.app/api/cron/daily
+   ```
+   and check `/dashboard` for the run log and your inbox for the digest. (The secret must go in
+   the header - it is deliberately not accepted as a `?secret=` query param, because query
+   strings are written to Vercel's request logs in plaintext.)
 8. The cron in `vercel.json` runs daily at 04:00 UTC (~9:30am IST) - edit the schedule if you want
    a different time. Note: Vercel Hobby plan cron jobs may fire within an hour of the scheduled
    time rather than exactly on it; Pro plan cron is exact.

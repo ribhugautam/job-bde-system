@@ -8,11 +8,10 @@ function isAuthorized(req: NextRequest): boolean {
   const secret = process.env.CRON_SECRET;
   if (!secret) return false; // fail closed - never run unprotected
   // Vercel Cron automatically sends this header when CRON_SECRET is set.
-  const auth = req.headers.get("authorization");
-  if (auth === `Bearer ${secret}`) return true;
-  // Fallback for manual testing: /api/cron/daily?secret=...
-  const url = new URL(req.url);
-  return url.searchParams.get("secret") === secret;
+  // Header only - a ?secret= query param would land in Vercel's request logs
+  // in plaintext. To trigger manually:
+  //   curl -H "Authorization: Bearer $CRON_SECRET" https://<app>/api/cron/daily
+  return req.headers.get("authorization") === `Bearer ${secret}`;
 }
 
 export async function GET(req: NextRequest) {
