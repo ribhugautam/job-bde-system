@@ -18,7 +18,16 @@ export const config = {
   matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
 };
 
-function isPublic(pathname: string): boolean {
+/**
+ * Exported solely so tests can assert what is and is not reachable without a
+ * session. This list is the single place a route can be exposed by accident,
+ * and it had no coverage until a dashboard-triggered pipeline run made the
+ * distinction load-bearing: /api/cron/daily is public and guarded by
+ * CRON_SECRET, while /api/actions/run-pipeline does the same work guarded only
+ * by the session. Getting those two confused would put an unauthenticated
+ * "send real email" button on the internet.
+ */
+export function isPublic(pathname: string): boolean {
   // The login screen and the endpoints that issue/clear the cookie.
   if (pathname === "/login") return true;
   if (pathname === "/api/auth/login") return true;

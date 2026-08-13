@@ -1,6 +1,7 @@
 import { LINKS } from "@/lib/domain/scoring/resume-profile";
 import { getActiveResume } from "@/lib/infra/db/documents";
 import ResumeUpload from "@/components/ResumeUpload";
+import RunPipelineButton from "@/components/RunPipelineButton";
 
 export const dynamic = "force-dynamic";
 
@@ -155,24 +156,35 @@ export default async function SettingsPage() {
 
       <div>
         <h2 className="mb-2 text-sm font-semibold text-neutral-300">Manual run</h2>
-        <p className="text-sm text-neutral-400">
-          Trigger the pipeline on demand. The secret goes in the{" "}
-          <span className="font-mono text-xs">Authorization</span> header — it is
-          deliberately not accepted as a query param, because query strings are
-          written to Vercel&apos;s request logs in plaintext.
+        <p className="mb-3 text-sm text-neutral-400">
+          Trigger the pipeline on demand. The worker is resumable: it drains
+          queued work until it runs out of time budget, then stops cleanly and
+          continues on the next run. Running it repeatedly is safe, and is how
+          you flush a backlog faster than the cron would.
         </p>
-        <pre className="mt-2 overflow-x-auto rounded bg-neutral-900 p-3 text-xs text-neutral-300">
-          curl -H &quot;Authorization: Bearer $CRON_SECRET&quot; \{"\n"}
-          {"  "}
-          {process.env.NEXT_PUBLIC_APP_URL || "https://your-app.vercel.app"}
-          /api/cron/daily
-        </pre>
-        <p className="mt-2 text-xs text-neutral-500">
-          The worker is resumable: it drains queued work until it runs out of
-          time budget, then stops cleanly and continues on the next run. Calling
-          this repeatedly is safe and is how you flush a backlog faster than the
-          cron would.
-        </p>
+
+        <RunPipelineButton dryRun={dryRun} />
+
+        <details className="mt-4 text-xs text-neutral-500">
+          <summary className="cursor-pointer">
+            Trigger from a terminal or CI instead
+          </summary>
+          <p className="mt-2">
+            The button above is authorized by your dashboard session, so no
+            secret is involved. Outside the browser there is no session, so use{" "}
+            <span className="font-mono">CRON_SECRET</span> against the cron
+            route. It goes in the{" "}
+            <span className="font-mono">Authorization</span> header — it is
+            deliberately not accepted as a query param, because query strings
+            are written to Vercel&apos;s request logs in plaintext.
+          </p>
+          <pre className="mt-2 overflow-x-auto rounded bg-neutral-900 p-3 text-neutral-300">
+            curl -X GET -H &quot;Authorization: Bearer $CRON_SECRET&quot; \{"\n"}
+            {"  "}
+            {process.env.NEXT_PUBLIC_APP_URL || "https://your-app.vercel.app"}
+            /api/cron/daily
+          </pre>
+        </details>
       </div>
     </div>
   );
