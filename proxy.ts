@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { SESSION_COOKIE, getAuthConfig, verifySessionToken } from "@/lib/infra/auth";
+import {
+  SESSION_COOKIE,
+  describeAuthConfig,
+  getAuthConfig,
+  verifySessionToken,
+} from "@/lib/infra/auth";
 
 /**
  * Deny by default.
@@ -33,10 +38,22 @@ export async function proxy(req: NextRequest) {
     // APP_PASSWORD / AUTH_SECRET missing or too weak. Serve nothing rather than
     // falling open - including the login page, which could not work anyway.
     if (pathname.startsWith("/api/cron/")) return NextResponse.next();
+
+    // Say WHICH variable is wrong and why. The previous message named both
+    // variables unconditionally, so a deployment whose password was merely too
+    // short read as "you forgot to set these" - advice the operator had already
+    // followed. See the disclosure note on describeAuthConfig().
+    const report = describeAuthConfig();
+    const detail = report.ok
+      ? "Auth configuration could not be validated."
+      : report.message;
+
     return new NextResponse(
       isApi
-        ? JSON.stringify({ error: "auth not configured" })
-        : "Auth is not configured on this deployment. Set APP_PASSWORD and AUTH_SECRET.",
+        ? JSON.stringify({ error: "auth not configured", detail })
+        : `Auth is not configured on this deployment.\n\n${detail}\n\n` +
+            `Set these in your .env for local development, or in Vercel's ` +
+            `Project Settings -> Environment Variables and redeploy.`,
       {
         status: 503,
         headers: { "content-type": isApi ? "application/json" : "text/plain" },

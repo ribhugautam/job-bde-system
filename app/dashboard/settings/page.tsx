@@ -109,7 +109,7 @@ export default async function SettingsPage() {
       <div>
         <h2 className="mb-2 text-sm font-semibold text-neutral-300">Environment</h2>
         <div className="rounded border border-neutral-800 p-3">
-          <EnvRow required name="APP_PASSWORD" hint="Unlocks the whole app; min 12 chars or every route serves 503" />
+          <EnvRow required name="APP_PASSWORD" hint="Unlocks the whole app; min 8 chars (use random, not a word) or every route serves 503" />
           <EnvRow required name="AUTH_SECRET" hint="Signs the session cookie; openssl rand -hex 32" />
           <EnvRow required name="CRON_SECRET" hint="Protects /api/cron/daily - the one route outside the password gate" />
           <EnvRow name="TURSO_DATABASE_URL" hint="libSQL/Turso database URL" fallback="local ./local.db file" />

@@ -164,13 +164,23 @@ endpoint behind a single password; unauthenticated browsers are redirected to
 dashboard exposes your resume, your inbox-derived job alerts, and the ability to
 send email as you.
 
-- **`APP_PASSWORD`** - the one password that unlocks the app. Minimum 12 characters.
+- **`APP_PASSWORD`** - the one password that unlocks the app. Minimum 8 characters, and it
+  should be **random rather than a word**. The login route throttles at 10 attempts per minute
+  per IP, but that counter is per warm serverless instance rather than global, so it is a speed
+  bump and not a real rate limiter: 8 random characters are far out of brute-force reach, an
+  8-letter dictionary word is not. `openssl rand -base64 12` produces something suitable.
 - **`AUTH_SECRET`** - random string (`openssl rand -hex 32`) used to sign the session
   cookie. Rotating it instantly signs out every browser.
 
-Both are required. If either is missing or `APP_PASSWORD` is shorter than 12 characters,
-the app **fails closed**: every route returns `503`, including the login page. It will
-never fall open.
+Both are required. If either is missing or too short, the app **fails closed**: every route
+returns `503`, including the login page. It will never fall open. The 503 page names which
+variable is at fault and whether it is absent or merely too short — it does not just say
+"set these", because a value that is set but one character under the limit is otherwise
+indistinguishable from a missing one, and that costs an afternoon.
+
+Both limits live in `lib/config/auth-policy.ts` and are enforced in two places — the Edge
+gate in `lib/infra/auth.ts` and startup validation in `lib/config/env.ts`. They import the
+same constants so the two can never disagree; a test asserts it.
 
 Signing in sets an `HttpOnly`, `Secure`, `SameSite=Lax` cookie valid for 30 days,
 holding only an expiry timestamp and its HMAC - there is no server-side session store.

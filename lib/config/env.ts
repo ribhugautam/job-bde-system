@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { MIN_PASSWORD_LENGTH, MIN_SECRET_LENGTH } from "./auth-policy";
 
 // ---------------------------------------------------------------------------
 // The single place process.env is read.
@@ -63,15 +64,23 @@ const schema = z.object({
   OWNER_EMAIL: optionalStr,
 
   // --- Dashboard auth ------------------------------------------------------
-  // 12 chars is enforced here so the rule lives in one place; proxy.ts reads
-  // the result rather than re-checking the length itself.
+  // Lengths come from lib/config/auth-policy.ts, which lib/infra/auth.ts also
+  // reads. They were previously hardcoded separately in both places, so raising
+  // one would have left the other accepting a shorter value — the app would
+  // validate at startup and then 503 at the gate.
   APP_PASSWORD: z
     .string()
-    .min(12, "APP_PASSWORD must be at least 12 characters")
+    .min(
+      MIN_PASSWORD_LENGTH,
+      `APP_PASSWORD must be at least ${MIN_PASSWORD_LENGTH} characters`
+    )
     .optional(),
   AUTH_SECRET: z
     .string()
-    .min(16, "AUTH_SECRET must be at least 16 characters")
+    .min(
+      MIN_SECRET_LENGTH,
+      `AUTH_SECRET must be at least ${MIN_SECRET_LENGTH} characters`
+    )
     .optional(),
 
   // --- Cron ----------------------------------------------------------------
