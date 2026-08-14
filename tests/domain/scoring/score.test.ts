@@ -51,15 +51,27 @@ const EVERY_SKILL_TOKEN = SKILLS.flatMap((s) => [
 
 const SPARSE_REASON =
   "scored on title only - no job description could be recovered for this job";
-const OVER_EXPERIENCED_REASON =
-  "requires 8+ years experience - likely mismatch";
-const UNKNOWN_REMOTE_REASON = "remote status not stated by this source";
-const NOT_REMOTE_REASON = "NOT remote - lower priority";
+// The over-experience penalty now lives in fitAdjustment and is driven by the
+// `minYears` fact rather than scoreJob parsing text itself (see
+// lib/domain/facts/experience.ts for that extraction). Its reason string also
+// embeds the candidate's actual years-of-experience figure, which changes as
+// time passes, so it can no longer be asserted as a fixed string constant -
+// tests match it with this regex instead.
+const OVER_EXPERIENCED_REASON_RE =
+  /^wants \d+\+ years, you have ~[\d.]+ - likely filtered out$/;
+const UNSTATED_ARRANGEMENT_REASON = "work arrangement not stated by this source";
+const ONSITE_REASON = "on-site - requires office presence";
+const HYBRID_REASON = "hybrid - requires office presence";
 const ROLE_REASON = "title matches a targeted role";
 
 /** Did this title earn the target-role bonus? */
 function matchedRole(title: string): boolean {
   return scoreJob(makeJob({ title })).reasons.includes(ROLE_REASON);
+}
+
+/** Did the over-experienced fit penalty fire? */
+function hasOverExperiencedReason(reasons: string[]): boolean {
+  return reasons.some((r) => OVER_EXPERIENCED_REASON_RE.test(r));
 }
 
 // ===========================================================================
@@ -496,39 +508,29 @@ describe("scoreJob", () => {
       expect(reasons).not.toContain("looks like an internship - deprioritized");
     });
 
-    it.each([
-      "8+ years",
-      "9+ years",
-      "10+ years",
-      "12+ years",
-      "15+ years",
-      "10+  year",
-      "10 + yrs",
-      "10 or more years",
-      "8-12 years",
-      "10–15 years", // en dash, as pasted from a formatted posting
-      "at least 10 years",
-      "minimum of 10 years",
-      "minimum 8 years",
-      "min. 9 yrs",
-    ])("fires the over-experienced penalty on %j", (phrase) => {
-      const { reasons } = scoreJob(
-        makeJob({
-          title: "Software Engineer",
-          description: `We require ${phrase} of production experience.`,
-        })
-      );
-      expect(reasons).toContain(OVER_EXPERIENCED_REASON);
-    });
+    // Parsing "8+ years" / "10–15 years" / "at least 10 years" style phrases
+    // out of a posting's prose is no longer scoreJob's job - that extraction
+    // now lives in lib/domain/facts/experience.ts (deriveExperience), tested
+    // in its own suite, and its result arrives here as the `minYears` /
+    // `maxYears` facts. scoreJob's remaining responsibility is purely
+    // numeric: given a stated floor, penalise it when it sits well above the
+    // candidate's actual years (fitAdjustment's EXPERIENCE_TOLERANCE_YEARS).
+    // The cases below are chosen far enough from the tolerance boundary that
+    // they hold regardless of how the candidate's real years-of-experience
+    // figure drifts with the calendar.
+    it.each([10, 12, 15, 20, 50])(
+      "fires the over-experienced penalty when the posting wants %i+ years",
+      (minYears) => {
+        const { reasons } = scoreJob(makeJob({ title: "Software Engineer", minYears }));
+        expect(hasOverExperiencedReason(reasons)).toBe(true);
+      }
+    );
 
-    it("states the threshold it actually enforces", () => {
-      // The reason string used to advertise "8-12+ years" while the regex only
-      // recognised the three literals 8+, 10+ and 12+. Both sides now agree on
-      // one rule: any stated floor >= 8 years.
-      const { reasons } = scoreJob(
-        makeJob({ title: "Engineer", description: "We need 15+ years." })
-      );
-      expect(reasons).toContain("requires 8+ years experience - likely mismatch");
+    it("states the floor the posting wants and the candidate's actual figure", () => {
+      const { reasons } = scoreJob(makeJob({ title: "Engineer", minYears: 15 }));
+      const hit = reasons.find((r) => OVER_EXPERIENCED_REASON_RE.test(r));
+      expect(hit).toBeDefined();
+      expect(hit).toContain("wants 15+ years");
     });
 
     it("lowers the score when the years penalty fires", () => {
@@ -538,129 +540,164 @@ describe("scoreJob", () => {
       const senior = scoreJob(
         makeJob({
           title: "Full Stack Engineer",
-          description: `${RICH_DESCRIPTION} Requires 10+ years of experience.`,
+          description: RICH_DESCRIPTION,
+          minYears: 10,
         })
       );
 
-      expect(senior.score).toBeGreaterThan(0);
+      expect(senior.score).toBeGreaterThanOrEqual(0);
       expect(senior.score).toBeLessThan(base.score);
     });
 
-    it("reads the years requirement from the whole haystack, not just the title", () => {
+    it("reads the experience floor from the minYears fact, not by re-parsing the description", () => {
+      // Text alone, with the fact left unset, must do nothing: scoreJob
+      // trusts the structured fact rather than hunting the description for a
+      // number of its own.
       const { reasons } = scoreJob(
         makeJob({ title: "Engineer", description: "Must have 12+ years." })
       );
-      expect(reasons).toContain(OVER_EXPERIENCED_REASON);
+      expect(hasOverExperiencedReason(reasons)).toBe(false);
     });
 
-    it.each([
-      "2+ years", // a floor Ribhu clears
-      "3-5 years",
-      "5+ years",
-      "7+ years", // just under the threshold
-      "110+ years", // company age, and the classic "10+" misparse
-      "founded 10 years ago", // bare number: history, not a requirement
-      "serving clients for over 10 years",
-      "10 people", // a number next to the wrong noun
-    ])("does NOT fire the over-experienced penalty on %j", (phrase) => {
-      const { reasons } = scoreJob(
-        makeJob({ title: "Software Engineer", description: `About us: ${phrase}.` })
-      );
-      expect(reasons).not.toContain(OVER_EXPERIENCED_REASON);
+    it.each([0, 1, 2])(
+      "does NOT fire the over-experienced penalty when minYears is %i",
+      (minYears) => {
+        const { reasons } = scoreJob(makeJob({ title: "Software Engineer", minYears }));
+        expect(hasOverExperiencedReason(reasons)).toBe(false);
+      }
+    );
+
+    it("does not fire when no experience floor is stated at all", () => {
+      const { reasons } = scoreJob(makeJob({ title: "Software Engineer" }));
+      expect(hasOverExperiencedReason(reasons)).toBe(false);
     });
 
-    it("takes the lower bound of a range as the stated requirement", () => {
-      // "3-10 years" is a wide net that Ribhu is inside; "8-12" is not.
+    it("rewards a range that brackets the candidate instead of penalising its floor", () => {
+      // "1-10 years" is a wide net the candidate sits inside; "8-12" is not -
+      // and because scoreJob is handed both ends of the range as facts (see
+      // fitAdjustment), it can tell the two apart instead of only ever
+      // looking at the lower bound the way the old text parser did.
       const insideRange = scoreJob(
-        makeJob({ title: "Engineer", description: "We want 3-10 years." })
+        makeJob({ title: "Engineer", minYears: 1, maxYears: 10 })
       );
       const aboveRange = scoreJob(
-        makeJob({ title: "Engineer", description: "We want 8-12 years." })
+        makeJob({ title: "Engineer", minYears: 8, maxYears: 12 })
       );
-      expect(insideRange.reasons).not.toContain(OVER_EXPERIENCED_REASON);
-      expect(aboveRange.reasons).toContain(OVER_EXPERIENCED_REASON);
+      expect(hasOverExperiencedReason(insideRange.reasons)).toBe(false);
+      expect(
+        insideRange.reasons.some((r) => r.includes("you are in range"))
+      ).toBe(true);
+      expect(hasOverExperiencedReason(aboveRange.reasons)).toBe(true);
     });
 
-    it("fires on the disqualifying figure even when a lower one appears first", () => {
-      // Postings routinely list several bars; one unreachable bar is enough.
+    it("trusts the minYears fact as given, without re-deriving a different figure from the text", () => {
+      // The description mentions a higher floor than the fact does; scoreJob
+      // must not second-guess the fact by re-scanning the text. Reconciling
+      // multiple stated floors into one winning figure already happens
+      // upstream, in deriveExperience, before scoreJob ever runs.
       const { reasons } = scoreJob(
         makeJob({
           title: "Engineer",
           description: "3+ years with React. 10+ years overall.",
+          minYears: 3,
         })
       );
-      expect(reasons).toContain(OVER_EXPERIENCED_REASON);
+      expect(hasOverExperiencedReason(reasons)).toBe(false);
     });
 
-    it("does not leak regex state between calls", () => {
-      // The year patterns are module-level and /g, so a stale lastIndex would
-      // make the second identical call disagree with the first.
-      const job = makeJob({ title: "Engineer", description: "10+ years." });
+    it("is deterministic across repeated calls with the same facts", () => {
+      const job = makeJob({ title: "Engineer", minYears: 10 });
       const first = scoreJob(job);
       const second = scoreJob(job);
       const third = scoreJob(job);
       expect(first).toEqual(second);
       expect(second).toEqual(third);
-      expect(first.reasons).toContain(OVER_EXPERIENCED_REASON);
+      expect(hasOverExperiencedReason(first.reasons)).toBe(true);
     });
   });
 
-  describe("remote preference", () => {
-    it("scores remote above non-remote and explains both", () => {
+  describe("work arrangement fit", () => {
+    it("scores remote above on-site and explains both", () => {
       const remote = scoreJob(
         makeJob({
           title: "Full Stack Engineer",
           description: RICH_DESCRIPTION,
-          remote: true,
+          arrangement: "remote",
         })
       );
       const onsite = scoreJob(
         makeJob({
           title: "Full Stack Engineer",
           description: RICH_DESCRIPTION,
-          remote: false,
+          arrangement: "onsite",
         })
       );
 
       expect(remote.score).toBeGreaterThan(onsite.score);
       expect(remote.reasons).toContain("remote");
-      expect(remote.reasons).not.toContain(NOT_REMOTE_REASON);
-      expect(onsite.reasons).toContain(NOT_REMOTE_REASON);
+      expect(remote.reasons).not.toContain(ONSITE_REASON);
+      expect(onsite.reasons).toContain(ONSITE_REASON);
       expect(onsite.reasons).not.toContain("remote");
     });
 
-    it("treats an unstated remote flag as unknown, not as on-site", () => {
-      // Three distinct states. Unknown must not inherit the on-site reason:
+    it("penalises hybrid the same as on-site, since both require office presence", () => {
+      const hybrid = scoreJob(
+        makeJob({
+          title: "Full Stack Engineer",
+          description: RICH_DESCRIPTION,
+          arrangement: "hybrid",
+        })
+      );
+      const onsite = scoreJob(
+        makeJob({
+          title: "Full Stack Engineer",
+          description: RICH_DESCRIPTION,
+          arrangement: "onsite",
+        })
+      );
+      expect(hybrid.reasons).toContain(HYBRID_REASON);
+      expect(hybrid.score).toBe(onsite.score);
+    });
+
+    it("treats an unstated arrangement as unknown, not as on-site", () => {
+      // Four distinct states. Unknown must not inherit the on-site reason:
       // that is a claim about the posting the source never made.
       const unknown = scoreJob(
         makeJob({ title: "Full Stack Engineer", description: RICH_DESCRIPTION })
       );
-      expect(unknown.reasons).toContain(UNKNOWN_REMOTE_REASON);
-      expect(unknown.reasons).not.toContain(NOT_REMOTE_REASON);
+      expect(unknown.reasons).toContain(UNSTATED_ARRANGEMENT_REASON);
+      expect(unknown.reasons).not.toContain(ONSITE_REASON);
       expect(unknown.reasons).not.toContain("remote");
     });
 
-    it("neither rewards nor punishes an unstated remote flag", () => {
+    it("neither rewards nor punishes an unstated arrangement, but still ranks below remote and above on-site", () => {
       const base = { title: "Full Stack Engineer", description: RICH_DESCRIPTION };
       const unknown = scoreJob(makeJob(base));
-      const onsite = scoreJob(makeJob({ ...base, remote: false }));
-      const remote = scoreJob(makeJob({ ...base, remote: true }));
+      const onsite = scoreJob(makeJob({ ...base, arrangement: "onsite" }));
+      const remote = scoreJob(makeJob({ ...base, arrangement: "remote" }));
 
-      // Unknown sits with on-site on the number (no bonus) but below remote:
-      // absence of evidence must not be scored as evidence either way.
-      expect(unknown.score).toBe(onsite.score);
+      // Unlike the old boolean `remote` flag - where unknown collapsed onto
+      // on-site's score because neither got a bonus - arrangement now carries
+      // an explicit on-site *penalty* (see ARRANGEMENT_ONSITE_PENALTY), so
+      // unknown's zero delta sits strictly between the two instead of tying
+      // with either one. Absence of evidence still must not be scored as
+      // evidence either way.
+      expect(unknown.score).toBeGreaterThan(onsite.score);
       expect(unknown.score).toBeLessThan(remote.score);
     });
 
-    it("gives every job exactly one remote reason", () => {
-      const variants = [undefined, true, false] as const;
-      for (const remote of variants) {
-        const { reasons } = scoreJob(makeJob({ title: "Engineer", remote }));
-        const remoteReasons = reasons.filter(
+    it("gives every job exactly one arrangement reason", () => {
+      const variants = [undefined, "remote", "hybrid", "onsite", "unknown"] as const;
+      for (const arrangement of variants) {
+        const { reasons } = scoreJob(makeJob({ title: "Engineer", arrangement }));
+        const arrangementReasons = reasons.filter(
           (r) =>
-            r === "remote" || r === NOT_REMOTE_REASON || r === UNKNOWN_REMOTE_REASON
+            r === "remote" ||
+            r === ONSITE_REASON ||
+            r === HYBRID_REASON ||
+            r === UNSTATED_ARRANGEMENT_REASON
         );
-        expect(remoteReasons).toHaveLength(1);
+        expect(arrangementReasons).toHaveLength(1);
       }
     });
   });
@@ -726,8 +763,9 @@ describe("scoreJob", () => {
       const { score, reasons } = scoreJob(
         makeJob({
           title: "Full Stack Engineer Intern",
-          description: `${EVERY_SKILL_TOKEN} requires 10+ years`,
-          remote: true,
+          description: EVERY_SKILL_TOKEN,
+          arrangement: "remote",
+          minYears: 10,
         })
       );
       expect(score).toBeLessThanOrEqual(100);
@@ -735,7 +773,7 @@ describe("scoreJob", () => {
       // Penalties are recorded even when the raw total is far past the ceiling,
       // so the reasons stay truthful about what was detected.
       expect(reasons).toContain("looks like an internship - deprioritized");
-      expect(reasons).toContain(OVER_EXPERIENCED_REASON);
+      expect(hasOverExperiencedReason(reasons)).toBe(true);
     });
 
     it("floors an empty job at exactly 0", () => {
@@ -934,16 +972,18 @@ describe("scoreJob", () => {
     // change invalidates MATCH_THRESHOLD in lib/pipeline/stages/score.ts.
     it("saturates near the top of the scale on an ordinary strong posting", () => {
       // Full credit is 35% of total skill weight, so a plainly good - not
-      // exceptional - posting already lands in the 90s. There is very little
-      // room left to distinguish "good" from "outstanding".
+      // exceptional - posting already lands in the high 80s on skill evidence
+      // alone, and a stated remote arrangement (+5, applied to the
+      // normalised score - see fitAdjustment) pushes it further still. There
+      // is very little room left to distinguish "good" from "outstanding".
       const { score } = scoreJob(
         makeJob({
           title: "Senior Full Stack Engineer",
           description: RICH_DESCRIPTION,
-          remote: true,
+          arrangement: "remote",
         })
       );
-      expect(score).toBeGreaterThanOrEqual(90);
+      expect(score).toBeGreaterThanOrEqual(85);
       expect(score).toBeLessThanOrEqual(100);
     });
 

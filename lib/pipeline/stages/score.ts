@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import { schema } from "@/lib/infra/db/client";
 import { scoreJob, scoreLead } from "@/lib/domain/scoring/score";
+import type { RawJob } from "@/lib/domain/types";
 import type { StageContext, StageResult } from "../context";
 import { claimJobs, claimLeads, failJob, failLead } from "./claim";
 
@@ -44,7 +45,14 @@ export async function runScore(ctx: StageContext): Promise<StageResult> {
         url: job.url,
         applyEmail: job.applyEmail ?? undefined,
         location: job.location ?? undefined,
-        remote: job.remote ?? true,
+        remote: job.remote ?? undefined,
+        arrangement: (job.arrangement as RawJob["arrangement"]) ?? undefined,
+        geoEligibility: (job.geoEligibility as RawJob["geoEligibility"]) ?? undefined,
+        geoRegions: (job.geoRegions as string[]) ?? [],
+        minYears: job.minYears ?? undefined,
+        maxYears: job.maxYears ?? undefined,
+        experienceText: job.experienceText ?? undefined,
+        easyApply: job.easyApply ?? undefined,
         salaryText: job.salaryText ?? undefined,
         tags: (job.tags as string[]) ?? [],
         description: job.description ?? undefined,
