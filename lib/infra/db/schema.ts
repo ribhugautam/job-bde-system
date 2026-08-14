@@ -32,20 +32,24 @@ export const jobs = sqliteTable(
     applyEmail: text("apply_email"), // set only if the listing itself publishes a plain apply-by-email address
     location: text("location"),
     /**
-     * DEPRECATED — read by nothing. `arrangement` is the source of truth.
+     * DEPRECATED — read by nothing. `arrangement` is the source of truth for
+     * where a job is worked from; this column is consulted nowhere in the
+     * codebase and exists now only because it cannot yet be dropped cleanly.
      *
-     * Kept for one phase so this migration stays additive: SQLite cannot alter
-     * a column, and rebuilding a live table on Turso is risk with no benefit.
-     * It is still WRITTEN, and now written honestly — null when the arrangement
-     * is unknown, instead of the `.default(true)` that made all 623 rows in the
-     * database claim to be remote.
+     * `.default(true)` is still present today, deliberately, not an oversight.
+     * Dropping it was tried: it made drizzle-kit emit a libSQL `ALTER COLUMN`
+     * plus a DROP/CREATE pass on all 16 indexes across four tables, instead of
+     * a pure `ADD COLUMN` migration — a rebuild-shaped change this plan will
+     * not risk against a live table holding 623 real rows for a column nothing
+     * reads. So the default stayed, and the migration that added `arrangement`
+     * and the rest of the structured-facts columns stayed additive-only.
      *
-     * `.default(true)` is left in place (rather than dropped) because dropping
-     * it here made drizzle-kit emit a libSQL `ALTER COLUMN` plus a DROP/CREATE
-     * INDEX pass on every index on this table — not a pure `ADD COLUMN`
-     * migration, and not something to risk against the live table for a
-     * column nothing reads. Ingest (Task 7) always passes an explicit value,
-     * so this default never actually applies going forward.
+     * Because the default is still live, any insert path that omits `remote`
+     * will silently persist `true`. Every insert MUST pass an explicit value
+     * for this column, including an explicit `null` when the arrangement is
+     * unknown — that discipline, not this schema, is what actually stops the
+     * bug this plan exists to eliminate (all 623 rows claiming remote). That
+     * guarantee is carried by the insert paths (Task 7), not by this column.
      */
     remote: integer("remote", { mode: "boolean" }).default(true),
     salaryText: text("salary_text"),
