@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { postJson } from "@/lib/domain/http/postJson";
+import { postJson } from "@/lib/infra/http/postJson";
 
 // The failure this module exists to prevent: a button that awaits
 // `res.json()` before checking `res.ok`, resets its busy flag after the parse,

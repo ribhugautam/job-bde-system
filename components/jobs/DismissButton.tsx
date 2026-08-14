@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { postJson } from "@/lib/domain/http/postJson";
+import { postJson } from "@/lib/infra/http/postJson";
 
 /**
  * Dismiss sets status to `ignored` through the EXISTING update-status endpoint.

@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { postJson } from "@/lib/domain/http/postJson";
+import { postJson } from "@/lib/infra/http/postJson";
 
 // Every action here goes through postJson, which returns a result rather than
 // throwing. These buttons previously parsed the body before checking res.ok and
