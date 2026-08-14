@@ -49,7 +49,13 @@ export async function runDraft(ctx: StageContext): Promise<StageResult> {
           url: job.url,
           applyEmail: job.applyEmail ?? undefined,
           location: job.location ?? undefined,
-          remote: job.remote ?? true,
+          // Honest, not defaulted: `?? true` is the exact coercion this
+          // codebase spent this branch eliminating (see the note on
+          // jobs.remote in lib/infra/db/schema.ts). Nothing in
+          // lib/domain/drafting/ currently reads `remote`, so this is
+          // presently inert either way - but the pattern should not be there
+          // to copy.
+          remote: job.remote ?? undefined,
           salaryText: job.salaryText ?? undefined,
           tags: (job.tags as string[]) ?? [],
           description: job.description ?? undefined,

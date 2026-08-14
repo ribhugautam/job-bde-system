@@ -16,6 +16,19 @@ export const LINKS = {
   phone: "+91 7807613493",
 };
 
+// Ribhu's continuous professional start date (Nature Technologies, SWE).
+// Derived rather than written as prose, because the prose figure in CANDIDATE
+// .summary below is the one number this system asserts that the CV does not,
+// and a hardcoded "nearly 3 years" rots silently as time passes.
+export const CAREER_START = new Date("2023-12-01T00:00:00Z");
+
+const MS_PER_YEAR = 365.25 * 24 * 60 * 60 * 1000;
+
+/** Years of professional experience as of `now`. */
+export function yearsOfExperience(now: Date = new Date()): number {
+  return Math.max(0, (now.getTime() - CAREER_START.getTime()) / MS_PER_YEAR);
+}
+
 export const CANDIDATE = {
   name: "Ribhu Gautam",
   title: "Full-Stack Software Engineer (Agentic AI / Next.js)",

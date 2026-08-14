@@ -6,6 +6,8 @@
 // one-way dependency — domain never imports infra — is what keeps those modules
 // unit-testable with plain data and no fixtures.
 
+import type { WorkArrangement, GeoEligibility } from "./facts/types";
+
 export type RawJob = {
   source: string;
   sourceId: string;
@@ -31,6 +33,18 @@ export type RawJob = {
    * its score should be read as title-only evidence.
    */
   sparse?: boolean;
+  // --- Structured facts (lib/domain/facts) -------------------------------
+  // Optional because a SOURCE may supply them directly — Y Combinator
+  // publishes minExperience and a visa restriction, Himalayas publishes
+  // locationRestrictions. deriveJobFacts() fills in only what is left
+  // undefined, so a board's own data always beats a regex over its prose.
+  arrangement?: WorkArrangement;
+  geoEligibility?: GeoEligibility;
+  geoRegions?: string[];
+  minYears?: number;
+  maxYears?: number;
+  experienceText?: string;
+  easyApply?: boolean;
 };
 
 export type RawLead = {

@@ -127,7 +127,7 @@ describe("parseJobPage - JSON-LD", () => {
         "&lt;ul&gt;&lt;li&gt;Ship React &amp;amp; Next.js features&lt;/li&gt;" +
         "&lt;li&gt;5+ years of TypeScript&lt;/li&gt;&lt;/ul&gt;"
     );
-    const text = parseJobPage(html);
+    const text = parseJobPage(html).description;
     expect(text).toBeDefined();
     expect(text).toContain("About the role");
     expect(text).toContain("Ship React & Next.js features");
@@ -139,7 +139,9 @@ describe("parseJobPage - JSON-LD", () => {
 
   it("handles a description that is plain (not double-escaped) HTML", () => {
     const html = jsonLdPage("<p>Build the platform.</p><p>Remote, Worldwide.</p>");
-    expect(parseJobPage(html)).toBe("Build the platform.\nRemote, Worldwide.");
+    expect(parseJobPage(html).description).toBe(
+      "Build the platform.\nRemote, Worldwide."
+    );
   });
 
   it("finds the JobPosting inside an array or an @graph wrapper", () => {
@@ -155,7 +157,7 @@ describe("parseJobPage - JSON-LD", () => {
         },
       ]
     )}</script></head><body></body></html>`;
-    expect(parseJobPage(graph)).toBe("Graph description here.");
+    expect(parseJobPage(graph).description).toBe("Graph description here.");
   });
 
   it("ignores JSON-LD blocks that are not JobPosting or are unparseable", () => {
@@ -166,7 +168,9 @@ describe("parseJobPage - JSON-LD", () => {
 <div class="show-more-less-html__markup"><p>Real description from the fallback container.</p></div>
 </body></html>`;
     expect(() => parseJobPage(html)).not.toThrow();
-    expect(parseJobPage(html)).toBe("Real description from the fallback container.");
+    expect(parseJobPage(html).description).toBe(
+      "Real description from the fallback container."
+    );
   });
 });
 
@@ -180,7 +184,7 @@ describe("parseJobPage - fallback containers", () => {
   </div>
 </div>
 </body></html>`;
-    const text = parseJobPage(html);
+    const text = parseJobPage(html).description;
     expect(text).toContain("We are hiring a Full Stack Engineer.");
     expect(text).toContain("Next.js");
     expect(text).toContain("Drizzle");
@@ -191,7 +195,7 @@ describe("parseJobPage - fallback containers", () => {
     const html = `<html><body>
 <section class="description__text">The whole description, unwrapped.</section>
 </body></html>`;
-    expect(parseJobPage(html)).toBe("The whole description, unwrapped.");
+    expect(parseJobPage(html).description).toBe("The whole description, unwrapped.");
   });
 
   it("decodes HTML entities and non-breaking spaces into readable text", () => {
@@ -199,7 +203,7 @@ describe("parseJobPage - fallback containers", () => {
 <p>R&amp;D team &#8226; we&#39;re hiring</p><p>Salary:&nbsp;&pound;80,000&nbsp;&#8211;&nbsp;&pound;95,000</p>
 <p>Must know &lt;canvas&gt; APIs</p>
 </div></body></html>`;
-    const text = parseJobPage(html) ?? "";
+    const text = parseJobPage(html).description ?? "";
     expect(text).toContain("R&D team • we're hiring");
     expect(text).toContain("Salary: £80,000 – £95,000");
     expect(text).toContain("Must know <canvas> APIs");
@@ -211,15 +215,15 @@ describe("parseJobPage - fallback containers", () => {
     const html = `<html><body><div class="description__text">
 <style>.x{color:red}</style><script>window.__x=1;</script><p>Actual copy.</p>
 </div></body></html>`;
-    const text = parseJobPage(html) ?? "";
+    const text = parseJobPage(html).description ?? "";
     expect(text).toBe("Actual copy.");
   });
 });
 
 describe("parseJobPage - nothing to extract", () => {
   it("returns undefined for an empty or whitespace-only page", () => {
-    expect(parseJobPage("")).toBeUndefined();
-    expect(parseJobPage("   \n  ")).toBeUndefined();
+    expect(parseJobPage("").description).toBeUndefined();
+    expect(parseJobPage("   \n  ").description).toBeUndefined();
   });
 
   it("returns undefined when neither JSON-LD nor a known container is present", () => {
@@ -227,12 +231,13 @@ describe("parseJobPage - nothing to extract", () => {
 <h1>Sign in to view this job</h1>
 <form action="/uas/login-submit"><button>Sign in</button></form>
 </body></html>`;
-    expect(parseJobPage(authWall)).toBeUndefined();
+    expect(parseJobPage(authWall).description).toBeUndefined();
   });
 
   it("returns undefined when the container exists but is empty", () => {
     expect(
       parseJobPage(`<html><body><div class="description__text">  </div></body></html>`)
+        .description
     ).toBeUndefined();
   });
 });
@@ -273,6 +278,7 @@ describe("fetchJobDescription - status to outcome mapping", () => {
     expect(result).toEqual({
       jobId: "3812345678",
       description: "We are hiring a Full Stack Engineer.",
+      company: "Vercel",
       outcome: "ok",
       httpStatus: 200,
     });
@@ -418,5 +424,34 @@ describe("sleep", () => {
       vi.useRealTimers();
     }
     await expect(sleep(-5)).resolves.toBeUndefined();
+  });
+});
+
+describe("parseJobPage company recovery", () => {
+  it("reads hiringOrganization.name from JSON-LD", () => {
+    const html = `<html><head><script type="application/ld+json">${JSON.stringify({
+      "@type": "JobPosting",
+      title: "Full Stack Developer",
+      description: "<p>Build things with React and TypeScript.</p>",
+      hiringOrganization: { "@type": "Organization", name: "SourceFuse" },
+    })}</script></head><body></body></html>`;
+    const result = parseJobPage(html);
+    expect(result.company).toBe("SourceFuse");
+    expect(result.description).toContain("React");
+  });
+
+  it("returns an undefined company when JSON-LD omits it", () => {
+    const html = `<html><head><script type="application/ld+json">${JSON.stringify({
+      "@type": "JobPosting",
+      description: "<p>Build things.</p>",
+    })}</script></head><body></body></html>`;
+    expect(parseJobPage(html).company).toBeUndefined();
+  });
+
+  it("returns an empty object for a page with nothing usable", () => {
+    expect(parseJobPage("<html><body>nope</body></html>")).toEqual({
+      description: undefined,
+      company: undefined,
+    });
   });
 });

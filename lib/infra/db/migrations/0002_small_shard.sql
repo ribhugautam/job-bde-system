@@ -1,0 +1,1 @@
+ALTER TABLE `linkedin_enrich_cache` ADD `company` text;
