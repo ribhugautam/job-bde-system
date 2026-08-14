@@ -23,7 +23,7 @@ export default async function JobsPage({ searchParams }: PageProps<"/dashboard/j
   // JSX construction stays out of the try: React defers rendering, so a
   // try/catch around a `return (<jsx/>)` would not actually catch render
   // errors — only the data fetch belongs in here. See the same pattern in
-  // every other dashboard page (queue, applications, leads, outreach).
+  // every other dashboard page (queue, applications, freelance, resume).
   let jobsData;
   try {
     const db = getDb();

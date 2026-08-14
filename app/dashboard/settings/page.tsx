@@ -100,6 +100,12 @@ export default function SettingsPage() {
               {process.env.NEXT_PUBLIC_APP_URL || "https://your-app.vercel.app"}
               /api/cron/daily
             </pre>
+            <p className="mt-2">
+              However you trigger it, the worker is resumable: it drains queued
+              work until it runs out of its time budget, then stops cleanly and
+              picks up where it left off. Running it repeatedly is safe, and is
+              how you flush a backlog faster than the daily cron would.
+            </p>
           </details>
           <EnvRow name="TURSO_DATABASE_URL" hint="libSQL/Turso database URL" fallback="local ./local.db file" />
           <EnvRow name="TURSO_AUTH_TOKEN" hint="Turso token; required whenever the URL is remote" />
