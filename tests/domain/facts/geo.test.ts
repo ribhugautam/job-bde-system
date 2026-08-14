@@ -69,4 +69,29 @@ describe("deriveGeo", () => {
       "worldwide"
     );
   });
+
+  it("treats an ambiguous Indian city name as eligible when no other country is named", () => {
+    expect(deriveGeo("Hyderabad (On-site)").eligibility).toBe("eligible");
+    expect(deriveGeo("Delhi, Delhi, India").eligibility).toBe("eligible");
+  });
+
+  it("does not treat a same-named foreign place as India", () => {
+    expect(deriveGeo("Hyderabad, Pakistan")).toEqual({ regions: [], eligibility: "unknown" });
+    expect(deriveGeo("Kochi, Japan")).toEqual({ regions: [], eligibility: "unknown" });
+    expect(deriveGeo("Surat Thani, Thailand")).toEqual({ regions: [], eligibility: "unknown" });
+  });
+
+  it("resolves an ambiguous city name against a competing country to restricted", () => {
+    expect(deriveGeo("Delhi, New York, USA").eligibility).toBe("restricted");
+    expect(deriveGeo("Delhi, Ontario, Canada").eligibility).toBe("restricted");
+  });
+
+  it("recognises the dotted U.S. abbreviation as restricted", () => {
+    expect(deriveGeo("Remote - U.S.").eligibility).toBe("restricted");
+    expect(deriveGeo("U.S. based").eligibility).toBe("restricted");
+  });
+
+  it("does not match 'us' inside an ordinary word", () => {
+    expect(deriveGeo("Bus Depot, Ontario")).toEqual({ regions: [], eligibility: "unknown" });
+  });
 });

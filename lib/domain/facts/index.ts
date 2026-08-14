@@ -37,15 +37,16 @@ export type JobFactsInput = {
  * the rules, over only the fields still unknown.
  */
 export function deriveJobFacts(job: JobFactsInput): JobFacts {
-  const experience =
-    job.minYears !== undefined
-      ? { minYears: job.minYears, maxYears: job.maxYears, experienceText: job.experienceText }
-      : deriveExperience([job.title, job.description].filter(Boolean).join("\n"));
+  const hasSourceExperience = job.minYears !== undefined || job.maxYears !== undefined;
+  const experience = hasSourceExperience
+    ? { minYears: job.minYears, maxYears: job.maxYears, experienceText: job.experienceText }
+    : deriveExperience([job.title, job.description].filter(Boolean).join("\n"));
 
-  const geo =
-    job.geoEligibility !== undefined
-      ? { eligibility: job.geoEligibility, regions: job.geoRegions ?? [] }
-      : deriveGeo(job.location);
+  const hasSourceGeo =
+    job.geoEligibility !== undefined || (job.geoRegions?.length ?? 0) > 0;
+  const geo = hasSourceGeo
+    ? { eligibility: job.geoEligibility ?? "unknown", regions: job.geoRegions ?? [] }
+    : deriveGeo(job.location);
 
   return {
     arrangement:

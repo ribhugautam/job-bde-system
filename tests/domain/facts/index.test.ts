@@ -53,4 +53,15 @@ describe("deriveJobFacts", () => {
     expect(Number.isInteger(FACTS_VERSION)).toBe(true);
     expect(FACTS_VERSION).toBeGreaterThan(0);
   });
+
+  it("preserves a source-supplied maxYears even without a matching minYears", () => {
+    const facts = deriveJobFacts({ maxYears: 5 });
+    expect(facts.maxYears).toBe(5);
+    expect(facts.minYears).toBeUndefined();
+  });
+
+  it("preserves source-supplied geoRegions even without an explicit geoEligibility", () => {
+    const facts = deriveJobFacts({ geoRegions: ["in"] });
+    expect(facts.geoRegions).toEqual(["in"]);
+  });
 });
