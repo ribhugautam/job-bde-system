@@ -50,7 +50,7 @@ export async function requireActiveResume(): Promise<ResumeFile> {
   const resume = await getActiveResume();
   if (!resume) {
     throw new Error(
-      "No active resume on file. Upload a PDF at /dashboard/settings (or run " +
+      "No active resume on file. Upload a PDF at /dashboard/resume (or run " +
         "`npm run seed:resume -- <path-to.pdf>`) before any application can be sent."
     );
   }

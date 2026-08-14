@@ -55,7 +55,13 @@ export default function SettingsPage() {
   const dryRun = process.env.DRY_RUN === "1";
   return (
     <div className="space-y-8 max-w-2xl">
-      <div className="rounded border border-(--border) p-3">
+      <div
+        className={`rounded border p-3 ${
+          dryRun
+            ? "border-(--warn-fg) bg-(--warn-bg)"
+            : "border-(--danger-fg) bg-(--danger-bg)"
+        }`}
+      >
         <div
           className={`text-sm font-semibold ${dryRun ? "text-(--warn-fg)" : "text-(--danger-fg)"}`}
         >

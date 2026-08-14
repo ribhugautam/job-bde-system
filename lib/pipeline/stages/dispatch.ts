@@ -42,7 +42,7 @@ export async function runDispatch(ctx: StageContext): Promise<StageResult> {
     // valuable thing to act on, so the digest lists it first among notices.
     ctx.notices.push(
       "No resume on file - applications are being queued for review instead of " +
-        "sent. Upload a PDF at /dashboard/settings to enable auto-send."
+        "sent. Upload a PDF at /dashboard/resume to enable auto-send."
     );
   }
 
