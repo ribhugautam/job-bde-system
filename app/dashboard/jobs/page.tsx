@@ -50,9 +50,20 @@ export default async function JobsPage({ searchParams }: PageProps<"/dashboard/j
         {rows.map((job) => (
           <div key={job.id} className="group relative">
             <JobRow job={job} />
-            <span className="absolute right-3 top-2 hidden group-hover:block">
-              <DismissButton jobId={job.id} dismissed={job.status === "ignored"} />
-            </span>
+            {/*
+              Only `found` and `ignored` get the control: dismiss/restore is a
+              lossless round trip only between those two statuses. Restore
+              hardcodes the target status to `found`, and storing where a job
+              actually was is off the table (no schema change) — so a job that
+              has moved past `found` (e.g. ready_for_review, matched) must not
+              be offered dismiss at all, or restoring it would silently drop
+              it out of whatever queue tracks that status.
+            */}
+            {(job.status === "found" || job.status === "ignored") && (
+              <span className="absolute right-3 top-2 opacity-0 transition group-hover:opacity-100 focus-within:opacity-100">
+                <DismissButton jobId={job.id} dismissed={job.status === "ignored"} />
+              </span>
+            )}
           </div>
         ))}
         {rows.length === 0 && (
