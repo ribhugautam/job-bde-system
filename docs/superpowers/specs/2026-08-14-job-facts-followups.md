@@ -147,3 +147,84 @@ Raising the arrangement penalty or lowering this bonus flips that relationship.
 It was chosen because an on-site role in India is physically takeable and a
 US-only remote role is not — but the operator's stated preferences were
 genuinely ambiguous on the point. One-line edit.
+
+---
+
+# Phase 2 follow-ups (Y Combinator and email-alert sources)
+
+Added 2026-08-14. Spec: `2026-08-14-phase2-sources-design.md`.
+
+## Highest-value follow-up
+
+**A failing parser is indistinguishable from a quiet day.**
+`lib/infra/mail/alert-ingest.ts`'s per-message `catch` swallows every parse
+exception with no counter and no log. If an email template changes and a parser
+starts throwing on every message, that source returns zero jobs and reports
+success — identical, from the outside, to "no new alerts today". The whole
+`errors` / `notices` / `disabledReason` discipline elsewhere in this pipeline
+exists to make exactly that distinction impossible. Count the skipped messages
+and surface the count as a notice.
+
+## Known limitations, accepted
+
+**`"Everywhere in the US"` scores as worldwide (+10), not restricted (−25).**
+A 35-point swing making an un-takeable job look takeable. Carried because it is
+PRE-EXISTING, not introduced by Phase 2: the untouched `anywhere` token already
+behaved identically (`"Anywhere in the US"` → worldwide). No captured data
+exhibits it. The correct fix bounds BOTH tokens against a trailing
+`in <region>`; fixing only `everywhere` would leave the two inconsistent.
+
+**`"Mumbai (GB)"` → `eligible ["in"]`.** An unambiguous Indian city name paired
+with an explicit, genuinely foreign country code discards the foreign claim
+rather than treating it as an unresolved conflict. This is the deliberate
+consequence of the guard that stopped Indian STATE codes (`KA`, `HR`, `UP`)
+resolving as foreign countries. No real data pairs a city name with a
+contradicting country code — real data uses state codes or leaves the city bare.
+
+**Indeed's `subjectFilter` is deliberately permissive** (`/^apply to jobs\b|@/i`).
+A subject like `"You have a new message from recruiter@company.com"` passes it.
+That is an accepted trade: the operator's original complaint was jobs NOT
+showing up, so dropping a real alert is worse than an occasional stray email
+reaching the parser. The safety net is structural rather than aspirational —
+`parseIndeedAlert` only creates a card when an anchor carries a `jk=` job key,
+so a notification email yields an empty result, a true skip rather than a
+fabricated row.
+
+**Wellfound jobs are scored on their title alone.** The digest carries no
+description, and enrichment only works on LinkedIn URLs. Salary, arrangement,
+location and years are extracted — but none of those feed the skill score.
+Expect Wellfound's few-a-week to rank low regardless of quality. Y Combinator
+does better here: its `skills[]` land in `tags`, which do enter the scoring
+haystack.
+
+**`postedAt` for alert sources** now threads through, but `scoreJob` ignores it.
+It is stored for completeness and for any future recency weighting.
+
+## Sources not built, and what unblocks them
+
+**Upwork** — blocked on the operator, not on code. A 60-day mailbox scan found
+exactly one message from upwork.com, and it was a security notice. To unblock:
+sign in, run a job search worth keeping, save it, enable email alerts on that
+saved search. Once digests arrive it becomes one more `AlertSource` entry —
+capture a fixture with `scripts/capture-alert-fixtures.ts`, write the parser
+against it, register it.
+
+**VirtualVocations** — 60 alert emails already arriving, remote-focused. A
+drop-in `AlertSource` whenever it is wanted. Left out only to keep the number of
+fragile HTML parsers proportionate to the coverage they add.
+
+## Free data left on the floor
+
+Y Combinator's payload carries `salaryRange`, `companyUrl`, `createdAt` /
+`lastActive` and `applyUrl`. Three of those map onto `RawJob` fields that
+already exist and are already consumed (`salaryText`, `companyUrl`, `postedAt`).
+Cheap wins.
+
+## A trap that survived Phase 2
+
+`lib/infra/sources/email/indeed.ts` reads `title` and `company` positionally as
+the first two lines, guarded only against a bare numeric rating. A TEXTUAL badge
+before the title — a hypothetical "Sponsored" or "New" label — would silently
+store the badge as the title and the real title as the company, cascading every
+field after it, with no error and no skip. The file header documents this
+honestly. No captured card exhibits it; add a guard if one ever does.
