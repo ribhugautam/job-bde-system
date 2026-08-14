@@ -18,6 +18,8 @@ const OWNED_KEYS = [
   "ADZUNA_APP_KEY",
   "ENABLE_UPWORK_RSS",
   "ENABLE_LINKEDIN_ALERTS",
+  "ENABLE_WELLFOUND_ALERTS",
+  "ENABLE_INDEED_ALERTS",
 ] as const;
 
 let saved: Record<string, string | undefined> = {};
@@ -64,6 +66,8 @@ describe("source names", () => {
       "jobicy",
       "adzuna",
       "linkedin_alert",
+      "wellfound_alert",
+      "indeed_alert",
     ]);
   });
 
@@ -171,6 +175,36 @@ describe("enabled()", () => {
       setEnv({ ENABLE_LINKEDIN_ALERTS: "1" });
       expect(linkedin().enabled()).toBe(true);
       expect(linkedin().disabledReason?.()).toBeUndefined();
+    });
+  });
+
+  describe("wellfound_alert", () => {
+    const wellfound = () => byName(JOB_SOURCES, "wellfound_alert");
+
+    it("is disabled by default, with a reason naming the flag", () => {
+      expect(wellfound().enabled()).toBe(false);
+      expect(wellfound().disabledReason?.()).toContain("ENABLE_WELLFOUND_ALERTS");
+    });
+
+    it("is enabled when ENABLE_WELLFOUND_ALERTS is set", () => {
+      setEnv({ ENABLE_WELLFOUND_ALERTS: "1" });
+      expect(wellfound().enabled()).toBe(true);
+      expect(wellfound().disabledReason?.()).toBeUndefined();
+    });
+  });
+
+  describe("indeed_alert", () => {
+    const indeed = () => byName(JOB_SOURCES, "indeed_alert");
+
+    it("is disabled by default, with a reason naming the flag", () => {
+      expect(indeed().enabled()).toBe(false);
+      expect(indeed().disabledReason?.()).toContain("ENABLE_INDEED_ALERTS");
+    });
+
+    it("is enabled when ENABLE_INDEED_ALERTS is set", () => {
+      setEnv({ ENABLE_INDEED_ALERTS: "1" });
+      expect(indeed().enabled()).toBe(true);
+      expect(indeed().disabledReason?.()).toBeUndefined();
     });
   });
 
@@ -354,7 +388,7 @@ describe("fetchAllLeads", () => {
 });
 
 describe("the real registries, run with everything disabled", () => {
-  it("reports adzuna, linkedin_alert and upwork_rss as skipped without fetching", async () => {
+  it("reports adzuna, linkedin_alert, wellfound_alert, indeed_alert and upwork_rss as skipped without fetching", async () => {
     // Only the disabled sources are exercised here: the always-on ones are
     // filtered out before any fetch happens, so nothing hits the network.
     const jobs = await fetchAllJobs(
@@ -363,7 +397,9 @@ describe("the real registries, run with everything disabled", () => {
     expect(jobs.jobs).toEqual([]);
     expect(jobs.skipped.map((s) => s.split(":")[0]).sort()).toEqual([
       "adzuna",
+      "indeed_alert",
       "linkedin_alert",
+      "wellfound_alert",
     ]);
 
     const leads = await fetchAllLeads(LEAD_SOURCES.filter((s) => !s.enabled()));

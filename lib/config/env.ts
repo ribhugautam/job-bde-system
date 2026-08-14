@@ -95,6 +95,8 @@ const schema = z.object({
 
   // --- LinkedIn ingest (own inbox, IMAP, read-only) ------------------------
   ENABLE_LINKEDIN_ALERTS: boolFlag(false),
+  ENABLE_WELLFOUND_ALERTS: boolFlag(false),
+  ENABLE_INDEED_ALERTS: boolFlag(false),
   IMAP_HOST: z.string().optional().default("imap.gmail.com"),
   IMAP_PORT: intWithDefault(993, 1, 65535),
   IMAP_MAILBOX: z.string().optional().default("INBOX"),
@@ -151,6 +153,8 @@ function build(raw: NodeJS.ProcessEnv) {
     DRY_RUN: raw.DRY_RUN,
     MATCH_THRESHOLD: raw.MATCH_THRESHOLD,
     ENABLE_LINKEDIN_ALERTS: raw.ENABLE_LINKEDIN_ALERTS,
+    ENABLE_WELLFOUND_ALERTS: raw.ENABLE_WELLFOUND_ALERTS,
+    ENABLE_INDEED_ALERTS: raw.ENABLE_INDEED_ALERTS,
     IMAP_HOST: raw.IMAP_HOST,
     IMAP_PORT: raw.IMAP_PORT,
     IMAP_MAILBOX: raw.IMAP_MAILBOX,

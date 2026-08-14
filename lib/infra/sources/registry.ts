@@ -12,6 +12,8 @@ import { fetchHimalayas } from "./himalayas";
 import { fetchJobicy } from "./jobicy";
 import { fetchAdzuna } from "./adzuna";
 import { fetchLinkedInAlerts } from "../linkedin/alerts";
+import { fetchAlertSource } from "@/lib/infra/mail/alert-ingest";
+import { WELLFOUND_ALERTS, INDEED_ALERTS } from "./email/registry";
 
 // ---------------------------------------------------------------------------
 // The single declaration of every job board this system pulls from.
@@ -102,6 +104,31 @@ export const JOB_SOURCES: SourceDefinition<RawJob>[] = [
       getEnv().ENABLE_LINKEDIN_ALERTS
         ? undefined
         : "set ENABLE_LINKEDIN_ALERTS=1 to enable (needs IMAP_USER/IMAP_PASSWORD, " +
+          "or the existing GMAIL_USER/GMAIL_APP_PASSWORD)",
+  },
+  {
+    // Reads your own inbox over IMAP, read-only. Same approach as
+    // linkedin_alert — no Wellfound account is authenticated, nothing is
+    // scraped from a logged-in surface.
+    name: "wellfound_alert",
+    kind: "job",
+    fetch: () => fetchAlertSource(WELLFOUND_ALERTS),
+    enabled: () => getEnv().ENABLE_WELLFOUND_ALERTS,
+    disabledReason: () =>
+      getEnv().ENABLE_WELLFOUND_ALERTS
+        ? undefined
+        : "set ENABLE_WELLFOUND_ALERTS=1 to enable (needs IMAP_USER/IMAP_PASSWORD, " +
+          "or the existing GMAIL_USER/GMAIL_APP_PASSWORD)",
+  },
+  {
+    name: "indeed_alert",
+    kind: "job",
+    fetch: () => fetchAlertSource(INDEED_ALERTS),
+    enabled: () => getEnv().ENABLE_INDEED_ALERTS,
+    disabledReason: () =>
+      getEnv().ENABLE_INDEED_ALERTS
+        ? undefined
+        : "set ENABLE_INDEED_ALERTS=1 to enable (needs IMAP_USER/IMAP_PASSWORD, " +
           "or the existing GMAIL_USER/GMAIL_APP_PASSWORD)",
   },
 ];
