@@ -44,7 +44,7 @@ function Toggle({
       onClick={onClick}
       className={`rounded border px-2 py-0.5 text-[11px] transition ${
         active
-          ? "border-(--ok-fg) bg-(--ok-bg) text-(--ok-fg)"
+          ? "border-(--border-strong) bg-(--surface-hover) text-(--text)"
           : "border-(--border-strong) text-(--text-muted) hover:text-(--text)"
       }`}
     >

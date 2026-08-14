@@ -21,7 +21,7 @@ export default function JobRow({ job }: { job: Job }) {
         dismissed ? "opacity-40" : ""
       }`}
     >
-      <span className="tnum w-8 shrink-0 text-right text-xs font-semibold text-(--ok-fg)">
+      <span className="tnum w-8 shrink-0 text-right text-xs font-semibold text-(--text)">
         {job.score ?? 0}
       </span>
 
