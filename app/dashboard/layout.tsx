@@ -16,7 +16,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const dryRun = process.env.DRY_RUN === "1";
   return (
     <div className="flex min-h-screen flex-col bg-(--bg) text-(--text)">
-      <header className="border-b border-(--border) px-6 py-3">
+      <header className="relative border-b border-(--border) px-6 py-3">
         <div className="flex items-center justify-between gap-4">
           <h1 className="text-sm font-semibold tracking-tight">Job &amp; Freelance Pipeline</h1>
           <div className="flex items-center gap-3">

@@ -97,7 +97,10 @@ export default function RunPipelineButton({ dryRun }: { dryRun: boolean }) {
   const open = state.status === "done" || state.status === "error";
 
   return (
-    <div className="relative">
+    <div className="flex items-center gap-2">
+      <span className="hidden text-[10px] text-(--text-dim) sm:inline">
+        {dryRun ? "dry run — no email" : "live — sends email"}
+      </span>
       <button
         onClick={run}
         disabled={running}
@@ -118,7 +121,7 @@ export default function RunPipelineButton({ dryRun }: { dryRun: boolean }) {
       </button>
 
       {open && (
-        <div className="absolute right-0 z-20 mt-2 w-104 rounded border border-(--border) bg-(--surface) p-3 shadow-lg">
+        <div className="absolute right-6 top-full z-20 mt-2 w-104 rounded border border-(--border) bg-(--surface) p-3 shadow-lg">
           <button
             onClick={() => setState({ status: "idle" })}
             className="float-right text-xs text-(--text-faint) hover:text-(--text)"
