@@ -41,7 +41,19 @@ describe("parseIndeedAlert against a real digest", () => {
 
   it("captures the description snippet, so these are not scored title-only", () => {
     const withDesc = jobs.filter((j) => (j.description ?? "").length > 20);
-    expect(withDesc.length).toBeGreaterThan(jobs.length / 2);
+    // Every one of the 19 fixture cards carries a description snippet.
+    expect(withDesc.length).toBe(19);
+  });
+
+  it("does not let a description's embedded pay figure steal it as a salary line", () => {
+    // NoTempMail's description reads "...Pay: From ₹10,000.00 per month.",
+    // which itself looks like a salary line. The classifier must still keep
+    // it as the description, not discard it as a duplicate salary match.
+    const job = jobs.find((j) => j.company === "NoTempMail");
+    expect(job).toBeDefined();
+    expect(job!.description).toBeDefined();
+    expect(job!.description!.length).toBeGreaterThan(20);
+    expect(job!.salaryText).toBe("From ₹10,000 a month");
   });
 
   it("builds a tracking-free canonical url from the job key", () => {

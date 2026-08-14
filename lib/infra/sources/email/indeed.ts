@@ -76,8 +76,14 @@ export function parseIndeedAlert(html: string): ParsedAlertJob[] {
       if (RATING_RE.test(line)) continue;            // company rating — the shifter
       if (EASY_APPLY_RE.test(line)) { easyApply = true; continue; }
       if (POSTED_RE.test(line)) continue;
-      if (SALARY_RE.test(line)) { salaryText ??= line; continue; }
+      // Length before salary: a description snippet may itself quote a pay
+      // figure ("...Pay: From ₹10,000.00 per month."), which would otherwise
+      // satisfy SALARY_RE and get swallowed as a bogus salary candidate. A
+      // real salary line is always short (the longest in this fixture is 31
+      // chars, well under MAX_LOCATION_LEN), so testing length first can never
+      // steal a genuine salary — only keep a long description out of its grasp.
       if (line.length > MAX_LOCATION_LEN) { description ??= line; continue; }
+      if (SALARY_RE.test(line)) { salaryText ??= line; continue; }
       location ??= line;
     }
 
