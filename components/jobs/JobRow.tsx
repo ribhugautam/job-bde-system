@@ -1,4 +1,5 @@
 import Chip from "@/components/ui/Chip";
+import StatusBadge from "@/components/StatusBadge";
 import { jobFactChips } from "./factChips";
 import type { jobs } from "@/lib/infra/db/schema";
 
@@ -38,6 +39,12 @@ export default function JobRow({ job }: { job: Job }) {
       {job.salaryText && (
         <span className="hidden shrink-0 text-[11px] text-(--text-dim) lg:inline">
           {job.salaryText}
+        </span>
+      )}
+
+      {job.status !== "found" && (
+        <span className="hidden shrink-0 md:inline">
+          <StatusBadge status={job.status} />
         </span>
       )}
 
