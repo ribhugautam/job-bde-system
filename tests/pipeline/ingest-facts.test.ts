@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { deriveJobFacts } from "@/lib/domain/facts";
-import { factsToRow } from "@/lib/pipeline/stages/ingest";
+import { factsToRow, mergeExperienceFacts } from "@/lib/pipeline/stages/ingest";
 import type { RawJob } from "@/lib/domain/types";
 
 // ingest.ts builds its insert payload from deriveJobFacts() + factsToRow(). This
@@ -66,5 +66,43 @@ describe("ingest fact translation", () => {
     });
     expect(row.arrangement).toBe("hybrid");
     expect(row.remote).toBe(false);
+  });
+});
+
+// The cross-source merge branch (db.update in ingestJobs) re-derives experience
+// facts through mergeExperienceFacts when a merge gains a richer description —
+// see the doc comment on mergeExperienceFacts in ingest.ts for why experience is
+// the only fact re-derived there. The merge branch itself needs a live
+// database and has no direct unit test, so this pins the decision function it
+// calls: imported straight from the shipped module, not a copy of it.
+describe("mergeExperienceFacts", () => {
+  it("updates minYears when the gained description states a requirement", () => {
+    const facts = mergeExperienceFacts(
+      "Engineer",
+      "We need someone with 8+ years of backend experience.",
+      true
+    );
+    expect(facts?.minYears).toBe(8);
+  });
+
+  it("leaves the experience fields empty, not invented, when the gained description states no requirement", () => {
+    const facts = mergeExperienceFacts(
+      "Engineer",
+      "Join our friendly team building great products.",
+      true
+    );
+    expect(facts).toEqual({});
+    expect(facts?.minYears).toBeUndefined();
+    expect(facts?.maxYears).toBeUndefined();
+    expect(facts?.experienceText).toBeUndefined();
+  });
+
+  it("does not change the experience fields at all when the merge gained no description", () => {
+    const facts = mergeExperienceFacts(
+      "Engineer",
+      "We need someone with 8+ years of backend experience.",
+      false
+    );
+    expect(facts).toBeUndefined();
   });
 });
