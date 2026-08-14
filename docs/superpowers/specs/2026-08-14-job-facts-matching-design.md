@@ -266,6 +266,17 @@ A second exported function, `repairMangledCard(title)`, applies steps 1-3 to a
 stored title string, so the 107 existing rows can be recovered by the backfill
 without mailbox access.
 
+**What repair can and cannot recover.** Step 4 resolves the company from HTML
+the stored string does not contain, so repair cannot split `"SDE II HSV
+Digital"` into title `SDE II` and company `HSV Digital` — no rule can, without
+a company list. Repair therefore recovers location, arrangement, `easyApply`
+and a badge-stripped title, and leaves `company` as `Unknown`. That is enough
+to fix the scores, because the fatal `Actively recruiting` veto and the wrong
+arrangement both live in the parts repair *can* clean. The residual `Unknown`
+company is closed separately by extending the enrichment fetch to read
+`hiringOrganization.name` from the public page's JSON-LD, which
+`parseJobPage()` already parses for the description.
+
 **Dependency: a real email fixture.** The template above is inferred from
 corrupt database rows, not from HTML. Writing the parser against an inferred
 shape would repeat the original mistake. The first implementation task is a
