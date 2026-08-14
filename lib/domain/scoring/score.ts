@@ -214,7 +214,13 @@ function roleVetoReason(phrase: string): string {
 const EXPERIENCE_TOLERANCE_YEARS = 2;
 
 const GEO_RESTRICTED_PENALTY = -25;
-const GEO_ELIGIBLE_BONUS = 8;
+// +10, not +8: at +8 this exactly cancelled ARRANGEMENT_ONSITE_PENALTY
+// (-8), so an India-eligible on-site job scored identically to a job where
+// NEITHER axis was known - arrangement became a complete no-op for exactly
+// the population (India-eligible postings) the operator cares most about.
+// +10 breaks the cancellation while leaving every other constant, and the
+// skill curve, untouched.
+const GEO_ELIGIBLE_BONUS = 10;
 const EXPERIENCE_OVER_PENALTY = -20;
 const EXPERIENCE_BRACKET_BONUS = 6;
 const ARRANGEMENT_REMOTE_BONUS = 5;
