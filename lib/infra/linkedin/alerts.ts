@@ -192,7 +192,7 @@ const TRAILING_BADGE_RES: readonly RegExp[] = [
   /\s+viewed$/i,
   /\s+new$/i,
   /\s+applied on [a-z]{3}\s+\d{1,2}$/i,
-  /\s+\d+\s+school alumni?$/i,
+  /\s+\d+\s+school alum(?:ni)?$/i,
   /\s+\d[\d,.]*\+?\s+(connections?|alumni|applicants?|people)$/i,
   /\s+\d+\s+(minutes?|hours?|days?|weeks?|months?)\s+ago$/i,
 ];
@@ -416,6 +416,36 @@ export function parseAlertEmail(html: string): Parsed[] {
   }
 
   return out;
+}
+
+/**
+ * Recovers what can be recovered from a title mangled by the previous parser.
+ *
+ * 107 rows in production stored an entire job card as their title — see the
+ * note on parseAlertEmail. That string still contains the location, the work
+ * arrangement and the Easy Apply badge, so the facts are recoverable without
+ * going back to the mailbox (which no longer holds emails that old).
+ *
+ * What is NOT recoverable is the title/company split: the company anchor lived
+ * in the HTML, not in this text, and "SDE II HSV Digital" cannot be divided by
+ * rule. `title` is therefore returned as the badge-stripped head, still
+ * containing the company name, and callers should leave `company` as "Unknown"
+ * rather than invent one. lib/infra/linkedin/enrich.ts closes that gap from the
+ * public job page's JSON-LD.
+ */
+export function repairMangledCard(storedTitle: string): {
+  title: string;
+  location?: string;
+  arrangement: WorkArrangement;
+  easyApply: boolean;
+} {
+  const parts = splitCard(storedTitle || "");
+  return {
+    title: parts.head,
+    location: parts.location,
+    arrangement: parts.arrangement,
+    easyApply: parts.easyApply,
+  };
 }
 
 export async function fetchLinkedInAlerts(): Promise<RawJob[]> {
