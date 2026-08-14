@@ -6,6 +6,8 @@ import {
   fingerprintLead,
   pickRicherDescription,
 } from "@/lib/domain/dedupe/fingerprint";
+import { deriveJobFacts, FACTS_VERSION } from "@/lib/domain/facts";
+import type { JobFacts, WorkArrangement } from "@/lib/domain/facts";
 import type { RawJob, RawLead } from "@/lib/domain/types";
 import { recordError, type StageContext, type StageResult } from "../context";
 
@@ -63,6 +65,25 @@ export async function runIngest(ctx: StageContext): Promise<StageResult> {
   // Ingest always completes its fetch in one call; there is no partial state to
   // resume, so hasMore is always false.
   return { processed: processedJobs + processedLeads, hasMore: false };
+}
+
+/**
+ * Translates derived facts into the two columns that decide remoteness.
+ *
+ * This is the exact seam where the original bug lived: `raw.remote ?? true`
+ * (plus a `.default(true)` on the column, kept for reasons documented on the
+ * column itself) silently overwrote a deliberate tri-state and made every one
+ * of 623 stored rows claim to be remote. `remote` is now an honest derivative
+ * of `arrangement`, never defaulted — `unknown` becomes `null`, not `true`.
+ */
+export function factsToRow(
+  facts: JobFacts
+): { arrangement: WorkArrangement; remote: boolean | null } {
+  return {
+    arrangement: facts.arrangement,
+    remote:
+      facts.arrangement === "unknown" ? null : facts.arrangement === "remote",
+  };
 }
 
 async function ingestJobs(
@@ -189,28 +210,41 @@ async function ingestJobs(
       const rows = await db
         .insert(schema.jobs)
         .values(
-          batch.map((raw) => ({
-            source: raw.source,
-            sourceId: raw.sourceId,
-            title: raw.title,
-            company: raw.company,
-            companyUrl: raw.companyUrl,
-            url: raw.url,
-            applyEmail: raw.applyEmail,
-            location: raw.location,
-            remote: raw.remote ?? true,
-            salaryText: raw.salaryText,
-            tags: raw.tags || [],
-            description: raw.description,
-            postedAt: raw.postedAt,
-            fingerprint: raw.fingerprint,
-            sources: raw.contributing,
-            descriptionSource: raw.description ? "source" : undefined,
-            status: "found" as const,
-            // A job that already has a description skips straight to scoring;
-            // only the description-less ones need the enrichment stage.
-            stage: raw.description ? ("score" as const) : ("enrich" as const),
-          }))
+          batch.map((raw) => {
+            const facts = deriveJobFacts(raw);
+            const { arrangement, remote } = factsToRow(facts);
+            return {
+              source: raw.source,
+              sourceId: raw.sourceId,
+              title: raw.title,
+              company: raw.company,
+              companyUrl: raw.companyUrl,
+              url: raw.url,
+              applyEmail: raw.applyEmail,
+              location: raw.location,
+              // Honest, and derived rather than defaulted — see factsToRow above.
+              remote,
+              arrangement,
+              geoEligibility: facts.geoEligibility,
+              geoRegions: facts.geoRegions,
+              minYears: facts.minYears,
+              maxYears: facts.maxYears,
+              experienceText: facts.experienceText,
+              easyApply: facts.easyApply,
+              factsVersion: FACTS_VERSION,
+              salaryText: raw.salaryText,
+              tags: raw.tags || [],
+              description: raw.description,
+              postedAt: raw.postedAt,
+              fingerprint: raw.fingerprint,
+              sources: raw.contributing,
+              descriptionSource: raw.description ? "source" : undefined,
+              status: "found" as const,
+              // A job that already has a description skips straight to scoring;
+              // only the description-less ones need the enrichment stage.
+              stage: raw.description ? ("score" as const) : ("enrich" as const),
+            };
+          })
         )
         // The unique index is the authority. Anything already stored is simply
         // skipped, which is what makes a retried run safe.

@@ -111,7 +111,11 @@ export async function fetchAdzuna(): Promise<RawJob[]> {
           url: j.redirect_url,
           applyEmail: extractApplyEmail(j.description),
           location: j.location?.display_name || country.toUpperCase(),
-          remote: true,
+          // Adzuna has no remote field; the REMOTE_HINT filter above only says
+          // the listing MENTIONS remote work, which is not the same as being
+          // remote. Left undefined so lib/domain/facts classifies it honestly
+          // rather than this source asserting something it does not know.
+          remote: undefined,
           salaryText: salaryText(j),
           tags: [j.category?.label, j.contract_time, j.contract_type].filter(
             Boolean
