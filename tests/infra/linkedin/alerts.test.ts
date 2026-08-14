@@ -507,3 +507,46 @@ describe("parseAlertEmail against a real alert email", () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// KNOWN GAP (fix round 1 of Task 9): a nested-anchor card - the real,
+// captured shape, not a synthetic one - that has no "Company · Location"
+// paragraph at all carries no CARD_SEPARATOR in either of its candidate
+// anchors, so parseAlertEmail's discriminator cannot distinguish it from the
+// older, unconfirmed template shape (see parseSingleAnchorCard's comment) and
+// routes it through that fallback. The fallback then keeps the richest
+// surviving text - here, the OUTER anchor, unstripped - as the title. If that
+// text carries a trailing token TRAILING_BADGE_RES does not enumerate (a
+// salary range, in this fixture), the token stays glued to the title: a
+// narrower replay of the original whole-card-as-title bug.
+//
+// This is PINNED, not closed, on purpose. Closing it would mean either (a)
+// changing the CARD_SEPARATOR-presence discriminator itself - explicitly out
+// of scope, since anchor selection was reviewed and approved - or (b)
+// stripping unrecognised trailing tokens more aggressively, which risks
+// truncating a genuine title that legitimately ends in something salary- or
+// number-shaped ("Software Engineer II - $150K Signing Bonus" is a title a
+// recruiter could plausibly write). An enumerated badge list being
+// inevitably incomplete is a known, accepted tradeoff everywhere else in this
+// file (see BADGE_LINE_PATTERNS' and TRAILING_BADGE_RES' own doc comments);
+// this test exists so that if this specific case is ever closed, it is a
+// deliberate change to this assertion, not a silent behavior drift.
+//
+// The invariant that DOES hold, and is asserted below: company never
+// fabricates a value it cannot support. It resolves to "Unknown", not to a
+// guess - the untidy title is the only cost.
+// ---------------------------------------------------------------------------
+describe("parseAlertEmail - nested card with no location paragraph (known gap, pinned)", () => {
+  const [job] = parseAlertEmail(fixture("nested-card-no-location.html"));
+
+  it("glues an unrecognised trailing token onto the title", () => {
+    // Accepted, documented behaviour - not the desired outcome, but not a
+    // fabricated field either. See the block comment above for why this is
+    // pinned instead of fixed.
+    expect(job.title).toBe("Platform Engineer $4M-$5M / year");
+  });
+
+  it("still refuses to guess a company rather than report the salary text as one", () => {
+    expect(job.company).toBe("Unknown");
+  });
+});

@@ -278,15 +278,31 @@ function subtractPrefix(head: string, prefix: string): string | undefined {
 
 /**
  * Parses a card that is carried by a single usable anchor - either because
- * LinkedIn only emitted one (this template's title-only anchor, its logo
- * anchor being empty and its CTA being navigation chrome), or because none of
- * several anchors for the id contains a CARD_SEPARATOR and so none of them is
- * "the whole card" - see parseAlertEmail.
+ * LinkedIn only emitted one, or because none of several anchors for the id
+ * contains a CARD_SEPARATOR and so none of them can be read as "the whole
+ * card" (see parseAlertEmail's discriminator).
+ *
+ * This is also the path every hand-written fixture in this test file
+ * exercises (digest-multi-job.html, glued-fields.html, duplicate-anchors.html,
+ * trapped-titles.html, badge-lines.html, nested-spans-title.html - each file's
+ * own header comment says so explicitly). Those were constructed to mirror an
+ * ASSUMED template shape before any real alert email had been captured. Only
+ * one real email has been captured since then
+ * (tests/fixtures/linkedin-alert.html), and it uses the nested-anchor shape
+ * the OTHER branch of parseAlertEmail handles - none of the fixtures listed
+ * above are known to reflect a template LinkedIn has actually sent. This
+ * fallback path is kept anyway, because a single captured sample cannot rule
+ * out a second real template any more than it can confirm one: "LinkedIn
+ * only ever sends the nested shape" is exactly as unproven as "LinkedIn also
+ * sends this older shape". Deleting the fallback on the strength of one
+ * sample would trade a known-safe path for an unverified assumption in the
+ * other direction, and would revert six passing tests besides.
  *
  * splitCard's head is the title here (no separator to split company off).
  * Company and location, when they exist at all, live in sibling <div>s
  * outside the anchor, so they are read positionally off the enclosing
- * container the same way this module always has.
+ * container the same way this module always has - see the caveat on that
+ * below.
  */
 function parseSingleAnchorCard(
   $: cheerio.CheerioAPI,
@@ -299,6 +315,13 @@ function parseSingleAnchorCard(
   let easyApply = parts.easyApply;
   let company: string | undefined;
 
+  // KNOWN ASSUMPTION, not currently defended: fields are read from the
+  // nearest enclosing <td>/<tr>/<table>, which assumes one job per cell. A
+  // single-column div layout, or a template that puts the title in its own
+  // cell, would either lose company/location or read them from the
+  // neighbouring job. Detecting a card boundary properly needs a real
+  // example of the broken template to design against, so this is documented
+  // instead of guessed at.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const container = $(anchor.el as any).closest("td, tr, table").get(0);
   if (container) {
@@ -350,10 +373,11 @@ function parseSingleAnchorCard(
  * original bug - deterministically picks that outer whole-card string.
  * Instead: group every anchor by job id first, then read the LONGEST text (it
  * is the one carrying the CARD_SEPARATOR) as the card, and the SHORTEST as the
- * title. When only one usable anchor exists for an id - the shape every
- * fixture in this test file predates this template with - there is no card
- * vs. title distinction to make, so splitCard's head is used as the title and
- * company/location are read positionally, exactly as this module always has.
+ * title. When no candidate anchor for an id carries the CARD_SEPARATOR, there
+ * is no card vs. title distinction to make, so splitCard's head is used as
+ * the title and company/location are read positionally instead - see
+ * parseSingleAnchorCard's comment for exactly what is, and is not, known
+ * about why that path still exists and what it costs.
  */
 export function parseAlertEmail(html: string): Parsed[] {
   const $ = cheerio.load(html);
@@ -383,11 +407,24 @@ export function parseAlertEmail(html: string): Parsed[] {
 
     const hasJoinedCard = candidates.some((c) => c.raw.includes(CARD_SEPARATOR));
     if (!hasJoinedCard) {
-      // None of this id's anchors is "the whole card" - the old template
-      // shape, where logo/title/company/CTA are each their own anchor. Keep
-      // the richest text as the title: safe here specifically because this
-      // shape never puts the whole card in one anchor, unlike the nested
-      // template below.
+      // None of this id's anchors carries the CARD_SEPARATOR, so none of
+      // them can be read as "the whole card" the way the branch below reads
+      // one. That is all this check knows for certain - it does NOT know
+      // that this id came from a genuinely different, older LinkedIn
+      // template; it only knows the joined-card signal is absent (see
+      // parseSingleAnchorCard's comment for what evidence does, and does
+      // not, back that reading).
+      //
+      // KNOWN GAP: a real nested-template card that happens to have no
+      // "Company · Location" paragraph at all (so no anchor contains
+      // CARD_SEPARATOR) lands here too, indistinguishable from the older
+      // shape by this check. If its outer anchor's text then carries a
+      // trailing token TRAILING_BADGE_RES does not recognise (a salary
+      // range, say), "keep the richest surviving text" glues that token
+      // onto the title - a narrower replay of the original bug, pinned by
+      // the "known gap" test in alerts.test.ts rather than silently
+      // shipped. Company still resolves to "Unknown" in that case (never a
+      // wrong guess); only the title gets untidy.
       const best = candidates.reduce((a, b) => (b.raw.length > a.raw.length ? b : a));
       out.push(parseSingleAnchorCard($, id, best));
       continue;

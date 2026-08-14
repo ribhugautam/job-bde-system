@@ -1,0 +1,39 @@
+<!-- Synthetic, but modeled directly on the REAL nested-anchor structure
+     captured in tests/fixtures/linkedin-alert.html (see task-1-report.md):
+     a company-logo anchor, an OUTER "job_posting" anchor wrapping a table,
+     and an INNER "jobcard_body" anchor nested inside it around the title.
+
+     What no captured email has ever shown us is a card in that shape with
+     no "Company &middot; Location" paragraph at all - only the title,
+     directly followed by a trailing token (here, a salary range) that is
+     not one of the enumerated TRAILING_BADGE_RES/BADGE_LINE_PATTERNS
+     strings. Without a CARD_SEPARATOR (" &middot; ") anywhere in either of
+     this id's two candidate anchors, parseAlertEmail's discriminator cannot
+     tell "this is the nested template with an atypical missing paragraph"
+     apart from "this is the plain two-anchor template", and routes it
+     through the older fallback, which keeps the richest (here: the outer,
+     unstripped) text. This fixture pins that accepted, documented
+     degradation - see the "known gap" test in alerts.test.ts. -->
+<table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%">
+<tr>
+<td width="56" valign="top">
+<a href="https://www.linkedin.com/comm/jobs/view/4500000001/?trackingId=Nn1%3D%3D&amp;trk=eml-email_job_alert_digest_01-primary_job_list-0-company_logo_0_jobid_4500000001"><img src="https://media.licdn.com/dms/image/company-logo_100_100/0/1" width="48" height="48" alt="Acme Corp"></a>
+</td>
+<td valign="top">
+<a href="https://www.linkedin.com/comm/jobs/view/4500000001/?trackingId=Nn1%3D%3D&amp;trk=eml-email_job_alert_digest_01-primary_job_list-0-job_posting_0_jobid_4500000001">
+<table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%">
+<tr>
+<td class="pb-0">
+<a href="https://www.linkedin.com/comm/jobs/view/4500000001/?trackingId=Nn1%3D%3D&amp;trk=eml-email_job_alert_digest_01-primary_job_list-0-jobcard_body_0_jobid_4500000001" style="color:#0a66c2;text-decoration:none;font-size:16px;font-weight:600;">Platform Engineer</a>
+</td>
+</tr>
+<tr>
+<td style="color:#00000099;font-size:12px;">
+$4M-$5M / year
+</td>
+</tr>
+</table>
+</a>
+</td>
+</tr>
+</table>
