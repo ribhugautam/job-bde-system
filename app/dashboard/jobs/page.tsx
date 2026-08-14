@@ -1,73 +1,103 @@
-import { getDb, schema } from "@/lib/infra/db/client";
-import { desc } from "drizzle-orm";
-import StatusBadge from "@/components/StatusBadge";
+import { getDb } from "@/lib/infra/db/client";
+import { parseJobFilters } from "@/lib/domain/jobs/filters";
+import { fetchFilteredJobs, fetchJobSources } from "@/lib/infra/db/job-queries";
+import { JOB_STATUSES } from "@/lib/pipeline/state";
+import FilterBar from "@/components/jobs/FilterBar";
+import JobRow from "@/components/jobs/JobRow";
+import DismissButton from "@/components/jobs/DismissButton";
 import { StatusSelect } from "@/components/ActionButtons";
 import DbErrorNotice from "@/components/DbErrorNotice";
 
 export const dynamic = "force-dynamic";
 
-const JOB_STATUSES = [
-  "found", "matched", "ready_for_review", "sent", "responded",
-  "interview", "offer", "rejected", "ignored",
-];
+const PAGE_SIZE = 200;
 
-export default async function JobsPage() {
-  let jobs;
+export default async function JobsPage({ searchParams }: PageProps<"/dashboard/jobs">) {
+  // Next 16 delivers searchParams as a promise.
+  const raw = await searchParams;
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(raw)) {
+    if (Array.isArray(value)) value.forEach((v) => params.append(key, v));
+    else if (value !== undefined) params.append(key, value);
+  }
+  const filters = parseJobFilters(params);
+
+  // JSX construction stays out of the try: React defers rendering, so a
+  // try/catch around a `return (<jsx/>)` would not actually catch render
+  // errors — only the data fetch belongs in here. See the same pattern in
+  // every other dashboard page (queue, applications, freelance, resume).
+  let jobsData;
   try {
-    jobs = await getDb()
-      .select()
-      .from(schema.jobs)
-      .orderBy(desc(schema.jobs.score))
-      .limit(200);
+    const db = getDb();
+    const [{ rows, total }, sources] = await Promise.all([
+      fetchFilteredJobs(db, filters, PAGE_SIZE),
+      fetchJobSources(db),
+    ]);
+    jobsData = { rows, total, sources };
   } catch (err) {
-    // Without this the page throws and Next renders a blank "server error",
-    // which in production also hides the message. Say what actually broke.
     return <DbErrorNotice error={err} />;
   }
 
+  const { rows, total, sources } = jobsData;
+
   return (
-    <div className="space-y-3">
-      <h2 className="text-sm font-semibold text-neutral-300">
-        {jobs.length} jobs, ranked by fit score
-      </h2>
-      <div className="space-y-2">
-        {jobs.map((job) => (
-          <div key={job.id} className="rounded border border-neutral-800 p-3">
-            <div className="flex flex-wrap items-start justify-between gap-2">
-              <div>
-                <a
-                  href={job.url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="font-medium text-white hover:underline"
-                >
-                  {job.title}
-                </a>
-                <div className="text-xs text-neutral-400">
-                  {job.company} · {job.location} · {job.source}
-                  {job.salaryText ? ` · ${job.salaryText}` : ""}
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-neutral-400">score {job.score}</span>
-                <StatusBadge status={job.status} />
-                <StatusSelect entity="job" id={job.id} status={job.status} options={JOB_STATUSES} />
-              </div>
+    <div className="-mx-6 -my-6">
+      <FilterBar
+        filters={filters}
+        total={total}
+        shown={rows.length}
+        sources={sources}
+      />
+      <div>
+        {rows.map((job) => (
+          // The wrapper repeats the row's hover tint so the control group below
+          // can sit on the same colour. Without it the row's own hover
+          // background drops the moment the pointer moves onto the overlay —
+          // the overlay is a sibling of the row, not a child of it.
+          <div key={job.id} className="group relative hover:bg-(--surface-hover)">
+            <JobRow job={job} />
+            {/*
+              The hover-revealed control group. It has a solid background and
+              horizontal padding because it lands on top of the row's source
+              column, which sits at the same right edge in the same 11px type:
+              without one they overlapped into unreadable mush at xl and wider.
+              min-h-full keeps it the height of the row, and lets it grow
+              downward rather than clip when a control renders an error.
+            */}
+            <div className="absolute right-1 top-0 flex min-h-full items-center gap-2 rounded bg-(--surface-hover) px-2 opacity-0 transition group-hover:opacity-100 focus-within:opacity-100">
+              {/*
+                Ungated, unlike dismiss: setting any status is the point. Six of
+                the eleven in JOB_STATUSES — matched, rejected, responded,
+                interview, offer, closed — are reachable from nowhere else in
+                the UI, since mark-applied only toggles ready_for_review ⇄ sent
+                and dismiss only toggles found ⇄ ignored. The list comes from
+                lib/pipeline/state.ts; a local copy here is what drifted last
+                time.
+              */}
+              <StatusSelect
+                entity="job"
+                id={job.id}
+                status={job.status}
+                options={[...JOB_STATUSES]}
+              />
+              {/*
+                Only `found` and `ignored` get dismiss: dismiss/restore is a
+                lossless round trip only between those two statuses. Restore
+                hardcodes the target status to `found`, and storing where a job
+                actually was is off the table (no schema change) — so a job that
+                has moved past `found` (e.g. ready_for_review, matched) must not
+                be offered dismiss at all, or restoring it would silently drop
+                it out of whatever queue tracks that status.
+              */}
+              {(job.status === "found" || job.status === "ignored") && (
+                <DismissButton jobId={job.id} dismissed={job.status === "ignored"} />
+              )}
             </div>
-            {job.scoreReasons && (job.scoreReasons as string[]).length > 0 && (
-              <div className="mt-2 flex flex-wrap gap-1">
-                {(job.scoreReasons as string[]).map((r, i) => (
-                  <span key={i} className="rounded bg-neutral-900 px-1.5 py-0.5 text-[10px] text-neutral-400">
-                    {r}
-                  </span>
-                ))}
-              </div>
-            )}
           </div>
         ))}
-        {jobs.length === 0 && (
-          <p className="text-sm text-neutral-500">
-            No jobs yet - wait for the first daily cron run, or trigger one manually.
+        {rows.length === 0 && (
+          <p className="px-3 py-6 text-sm text-(--text-dim)">
+            No jobs match these filters.
           </p>
         )}
       </div>

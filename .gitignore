@@ -50,3 +50,6 @@ local.db-*
 *.db-journal
 *.db-wal
 *.db-shm
+
+# superpowers scratch: SDD ledgers, briefs, review packages, brainstorm mockups
+.superpowers/

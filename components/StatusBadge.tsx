@@ -1,25 +1,32 @@
 const COLORS: Record<string, string> = {
-  found: "bg-neutral-700 text-neutral-200",
-  matched: "bg-blue-900 text-blue-200",
-  drafted: "bg-blue-900 text-blue-200",
-  ready_for_review: "bg-amber-900 text-amber-200",
-  pitched: "bg-amber-900 text-amber-200",
-  sent: "bg-emerald-900 text-emerald-200",
-  responded: "bg-purple-900 text-purple-200",
-  interview: "bg-purple-900 text-purple-200",
-  offer: "bg-green-800 text-green-100",
-  won: "bg-green-800 text-green-100",
-  rejected: "bg-red-900 text-red-200",
-  lost: "bg-red-900 text-red-200",
-  failed: "bg-red-900 text-red-200",
-  ignored: "bg-neutral-800 text-neutral-500",
+  // reached a good end state
+  sent: "bg-(--ok-bg) text-(--ok-fg)",
+  offer: "bg-(--ok-bg) text-(--ok-fg)",
+  won: "bg-(--ok-bg) text-(--ok-fg)",
+  applied: "bg-(--ok-bg) text-(--ok-fg)",
+  // waiting on the operator
+  ready_for_review: "bg-(--warn-bg) text-(--warn-fg)",
+  pitched: "bg-(--warn-bg) text-(--warn-fg)",
+  // someone replied — in play
+  responded: "bg-(--info-bg) text-(--info-fg)",
+  interview: "bg-(--info-bg) text-(--info-fg)",
+  matched: "bg-(--info-bg) text-(--info-fg)",
+  drafted: "bg-(--info-bg) text-(--info-fg)",
+  // over, unsuccessfully
+  rejected: "bg-(--danger-bg) text-(--danger-fg)",
+  lost: "bg-(--danger-bg) text-(--danger-fg)",
+  failed: "bg-(--danger-bg) text-(--danger-fg)",
+  // no verdict
+  found: "bg-(--neutral-bg) text-(--neutral-fg)",
+  ignored: "bg-(--neutral-bg) text-(--text-faint)",
+  closed: "bg-(--neutral-bg) text-(--text-faint)",
 };
 
 export default function StatusBadge({ status }: { status: string }) {
   return (
     <span
       className={`inline-block rounded px-2 py-0.5 text-xs font-medium ${
-        COLORS[status] || "bg-neutral-800 text-neutral-300"
+        COLORS[status] || "bg-(--neutral-bg) text-(--neutral-fg)"
       }`}
     >
       {status.replace(/_/g, " ")}

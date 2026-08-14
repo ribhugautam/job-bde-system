@@ -1,24 +1,66 @@
 @import "tailwindcss";
 
+/* ---------------------------------------------------------------------------
+ * Design tokens.
+ *
+ * This file was Next.js boilerplate (Arial, and a light/dark pair the dashboard
+ * overrode with hardcoded neutral-950). The app is dark-only and single-user, so
+ * the light theme is dropped rather than maintained unused.
+ *
+ * COLOUR CARRIES MEANING. The four semantic pairs below map to facts a reader
+ * acts on — can I take this job, does it need office presence — and nothing
+ * else in the UI may use them decoratively.
+ * ------------------------------------------------------------------------- */
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --bg: #08080a;
+  --surface: #0c0c0d;
+  --surface-hover: #141417;
+  --border: #1e1e21;
+  --border-strong: #3f3f46;
+
+  --text: #f4f4f5;
+  --text-muted: #a1a1aa;
+  --text-dim: #71717a;
+  --text-faint: #52525b;
+
+  /* takeable */
+  --ok-bg: #052e1a;      --ok-fg: #4ade80;
+  /* no restriction stated */
+  --info-bg: #0a2540;    --info-fg: #60a5fa;
+  /* requires office presence */
+  --warn-bg: #3a2a06;    --warn-fg: #fbbf24;
+  /* not takeable */
+  --danger-bg: #3f1114;  --danger-fg: #f87171;
+  /* everything else */
+  --neutral-bg: #1c1c1f; --neutral-fg: #a1a1aa;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-border-subtle: var(--border);
+  --color-text: var(--text);
+  --color-text-muted: var(--text-muted);
+  --color-text-dim: var(--text-dim);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html {
+  /* A system stack, deliberately: next/font/google would add a build-time
+   * network fetch, and the typographic gain here comes from the scale, the
+   * tracking and tabular numerals rather than the typeface. Swapping in a
+   * webfont later is a one-line change. */
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+
+/* Scores and counts sit in columns; proportional digits make them jitter. */
+.tnum {
+  font-variant-numeric: tabular-nums;
 }

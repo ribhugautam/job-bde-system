@@ -52,17 +52,22 @@ export default function ResumeUpload() {
         type="file"
         name="resume"
         accept="application/pdf,.pdf"
-        className="block w-full text-xs text-neutral-400 file:mr-3 file:rounded file:border-0 file:bg-neutral-800 file:px-3 file:py-1.5 file:text-xs file:text-neutral-200 hover:file:bg-neutral-700"
+        className="block w-full text-xs text-(--text-muted) file:mr-3 file:rounded file:border-0 file:bg-(--neutral-bg) file:px-3 file:py-1.5 file:text-xs file:text-(--text) hover:file:brightness-125"
       />
+      {/*
+        Greyscale, deliberately. Green means "takeable" in this palette and is
+        reserved for the send controls; an upload is a neutral action, and
+        colouring it would make the token mean two things.
+      */}
       <button
         type="submit"
         disabled={busy}
-        className="rounded bg-emerald-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-600 disabled:opacity-50"
+        className="rounded bg-(--neutral-bg) px-3 py-1.5 text-xs font-medium text-(--text) hover:brightness-125 disabled:opacity-50"
       >
         {busy ? "Uploading…" : "Upload resume"}
       </button>
       {msg && (
-        <p className={`text-xs ${msg.ok ? "text-emerald-400" : "text-red-400"}`}>
+        <p className={`text-xs ${msg.ok ? "text-(--ok-fg)" : "text-(--danger-fg)"}`}>
           {msg.text}
         </p>
       )}
