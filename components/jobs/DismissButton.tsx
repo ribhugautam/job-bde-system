@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { postJson } from "@/lib/domain/http/postJson";
 
 /**
  * Dismiss sets status to `ignored` through the EXISTING update-status endpoint.
@@ -23,19 +24,17 @@ export default function DismissButton({
   async function onClick() {
     setBusy(true);
     setError(null);
-    const res = await fetch("/api/actions/update-status", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        entity: "job",
-        id: jobId,
-        status: dismissed ? "found" : "ignored",
-      }),
+    // postJson never throws, so `setBusy(false)` is reached on every path.
+    // Parsing the body before checking res.ok used to strand this button
+    // disabled whenever the route answered with a non-JSON 500.
+    const res = await postJson("/api/actions/update-status", {
+      entity: "job",
+      id: jobId,
+      status: dismissed ? "found" : "ignored",
     });
-    const data = await res.json();
     setBusy(false);
     if (!res.ok) {
-      setError(data.error || "failed");
+      setError(res.error);
       return;
     }
     router.refresh();

@@ -2,6 +2,13 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { postJson } from "@/lib/domain/http/postJson";
+
+// Every action here goes through postJson, which returns a result rather than
+// throwing. These buttons previously parsed the body before checking res.ok and
+// reset their busy flag after the parse, so a non-JSON 500 — what an uncaught
+// exception in the route produces — left them stuck on "Sending..." with no
+// error shown until the page was reloaded.
 
 export function SendApplicationButton({ applicationId }: { applicationId: number }) {
   const router = useRouter();
@@ -11,15 +18,10 @@ export function SendApplicationButton({ applicationId }: { applicationId: number
   async function onClick() {
     setLoading(true);
     setError(null);
-    const res = await fetch("/api/actions/send-application", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ applicationId }),
-    });
-    const data = await res.json();
+    const res = await postJson("/api/actions/send-application", { applicationId });
     setLoading(false);
     if (!res.ok) {
-      setError(data.error || "failed");
+      setError(res.error);
       return;
     }
     router.refresh();
@@ -47,15 +49,10 @@ export function SendOutreachButton({ outreachId }: { outreachId: number }) {
   async function onClick() {
     setLoading(true);
     setError(null);
-    const res = await fetch("/api/actions/send-outreach", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ outreachId }),
-    });
-    const data = await res.json();
+    const res = await postJson("/api/actions/send-outreach", { outreachId });
     setLoading(false);
     if (!res.ok) {
-      setError(data.error || "failed");
+      setError(res.error);
       return;
     }
     router.refresh();
@@ -89,31 +86,42 @@ export function StatusSelect({
   const router = useRouter();
   const [value, setValue] = useState(status);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   async function onChange(next: string) {
+    const previous = value;
     setValue(next);
     setLoading(true);
-    await fetch("/api/actions/update-status", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ entity, id, status: next }),
-    });
+    setError(null);
+    const res = await postJson("/api/actions/update-status", { entity, id, status: next });
     setLoading(false);
+    if (!res.ok) {
+      // The select was showing the new status while the write had failed,
+      // which reads as a save that happened. Put it back and say why.
+      setValue(previous);
+      setError(res.error);
+      return;
+    }
     router.refresh();
   }
 
   return (
-    <select
-      value={value}
-      disabled={loading}
-      onChange={(e) => onChange(e.target.value)}
-      className="rounded border border-neutral-700 bg-neutral-900 px-2 py-1 text-xs text-neutral-200"
-    >
-      {options.map((o) => (
-        <option key={o} value={o}>
-          {o.replace(/_/g, " ")}
-        </option>
-      ))}
-    </select>
+    <span className="inline-flex flex-col items-end gap-0.5">
+      <select
+        value={value}
+        disabled={loading}
+        onChange={(e) => onChange(e.target.value)}
+        className="rounded border border-neutral-700 bg-neutral-900 px-2 py-1 text-xs text-neutral-200 disabled:opacity-50"
+      >
+        {options.map((o) => (
+          <option key={o} value={o}>
+            {o.replace(/_/g, " ")}
+          </option>
+        ))}
+      </select>
+      {error && (
+        <span className="max-w-40 text-right text-[10px] text-(--danger-fg)">{error}</span>
+      )}
+    </span>
   );
 }
