@@ -90,8 +90,8 @@ export default async function OverviewPage() {
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
         <Stat label="Waiting on one keystroke" value={queued} href="/dashboard/queue" />
         <Stat label="Jobs tracked" value={jobs} href="/dashboard/jobs" />
-        <Stat label="Leads tracked" value={leads} href="/dashboard/leads" />
-        <Stat label="Pitches to review" value={readyPitches} href="/dashboard/outreach" />
+        <Stat label="Leads tracked" value={leads} href="/dashboard/freelance" />
+        <Stat label="Pitches to review" value={readyPitches} href="/dashboard/freelance" />
       </div>
 
       {lastRun?.budgetExhausted && (
