@@ -94,4 +94,23 @@ describe("deriveGeo", () => {
   it("does not match 'us' inside an ordinary word", () => {
     expect(deriveGeo("Bus Depot, Ontario")).toEqual({ regions: [], eligibility: "unknown" });
   });
+
+  it("does not veto an ambiguous city on an incidental country mention", () => {
+    // A country named in passing (timezone note, client base) is not a
+    // stated restriction — only a location COMPONENT that IS the country
+    // vetoes. See the "still veto" cases in the tests above for contrast.
+    expect(deriveGeo("Hyderabad-based team serving US clients").eligibility).toBe(
+      "eligible"
+    );
+    expect(deriveGeo("Hyderabad (IST, overlapping with US hours)").eligibility).toBe(
+      "eligible"
+    );
+    expect(deriveGeo("Delhi (remote, US timezone overlap)").eligibility).toBe("eligible");
+    expect(deriveGeo("Kochi, working with US and EU clients").eligibility).toBe("eligible");
+  });
+
+  it("treats a list naming both India and another country as eligible", () => {
+    expect(deriveGeo("India / United States").eligibility).toBe("eligible");
+    expect(deriveGeo("Remote (IN; US)").eligibility).toBe("eligible");
+  });
 });

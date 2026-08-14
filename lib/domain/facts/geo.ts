@@ -37,13 +37,42 @@ const UNAMBIGUOUS_INDIA_RE =
 /**
  * City names that are Indian only in the absence of a competing country —
  * "Hyderabad (On-site)" is India, "Hyderabad, Pakistan" is not. Resolved by
- * OTHER_COUNTRY_RE at the call site.
+ * namesAnotherCountry() at the call site.
  */
 const AMBIGUOUS_INDIA_RE = /\b(delhi|hyderabad|kochi|surat)\b/i;
 
-/** Countries that collide with an ambiguous Indian city name above. */
-const OTHER_COUNTRY_RE =
-  /\b(pakistan|japan|thailand|indonesia|philippines|usa?|u\.s\.a?\.?|united\s+states|america|americas|canada|uk|united\s+kingdom|england|scotland|wales|europe|european|eu|emea|eea|latam|latin\s+america|south\s+america|australia|new\s+zealand|anz)\b/i;
+/**
+ * Countries that collide with an ambiguous Indian city name above. Kept as a
+ * single alternation string so OTHER_COUNTRY_ANCHORED_RE below — used to
+ * decide whether a location COMPONENT is that country, not merely mentions
+ * it — can never drift out of sync with this list.
+ */
+const OTHER_COUNTRY_TOKENS =
+  "pakistan|japan|thailand|indonesia|philippines|usa?|u\\.s\\.a?\\.?|united\\s+states|america|americas|canada|uk|united\\s+kingdom|england|scotland|wales|europe|european|eu|emea|eea|latam|latin\\s+america|south\\s+america|australia|new\\s+zealand|anz";
+
+/**
+ * Anchored end to end: matches only when an entire (trimmed, parenthetical-
+ * stripped) location component IS a country name, e.g. the "Pakistan" in
+ * "Hyderabad, Pakistan". An unanchored match would also fire on "US" inside
+ * "Hyderabad-based team serving US clients", which is incidental prose, not
+ * a stated restriction — the same hazard WORLDWIDE_RE already guards against
+ * for "Remote, Worldwide (US timezone overlap)".
+ */
+const OTHER_COUNTRY_ANCHORED_RE = new RegExp(`^(?:${OTHER_COUNTRY_TOKENS})$`, "i");
+
+/**
+ * True when `text` names another country as its own location component
+ * (split on `,` `/` `;`) rather than mentioning one in passing.
+ */
+function namesAnotherCountry(text: string): boolean {
+  return text.split(/[,/;]/).some((component) => {
+    const trimmed = component
+      .trim()
+      .replace(/\s*\([^)]*\)?\s*$/, "")
+      .trim();
+    return OTHER_COUNTRY_ANCHORED_RE.test(trimmed);
+  });
+}
 
 const APAC_RE = /\b(apac|asia[\s-]?pacific|asia)\b/i;
 
@@ -95,7 +124,7 @@ export function deriveGeo(location?: string): GeoFacts {
 
   const isIndia =
     UNAMBIGUOUS_INDIA_RE.test(text) ||
-    (AMBIGUOUS_INDIA_RE.test(text) && !OTHER_COUNTRY_RE.test(text));
+    (AMBIGUOUS_INDIA_RE.test(text) && !namesAnotherCountry(text));
 
   const regions: string[] = [];
   if (isIndia) regions.push("in");
