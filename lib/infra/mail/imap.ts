@@ -17,10 +17,10 @@ import { getEnv } from "@/lib/config/env";
 // module may call messageFlagsSet/Add/Remove, messageMove, messageCopy,
 // messageDelete or append.
 //
-// lib/infra/linkedin/alerts.ts still opens its own connection inline with the
-// same settings and the same readOnly flag. `withMailbox` is shaped so it can
-// drop in there unchanged - its body is already `for await (const msg of
-// client.fetch(...))`, which is exactly the callback signature here.
+// `withMailbox` is the shared door: LinkedIn, Wellfound and Indeed alert
+// ingestion (lib/infra/linkedin/alerts.ts and lib/infra/mail/alert-ingest.ts)
+// and reply detection (lib/infra/mail/replies.ts) all connect through it
+// rather than opening a client of their own.
 // ---------------------------------------------------------------------------
 
 export type ImapSettings = {

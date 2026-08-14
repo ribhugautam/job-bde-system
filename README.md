@@ -7,8 +7,8 @@ ones it safely can, and queues the rest for a one-click approval from a dashboar
 ## What this actually does (and doesn't)
 
 **Fully automated, no human in the loop:**
-- Fetches from RemoteOK, Remotive, Arbeitnow, We Work Remotely, Himalayas, Jobicy, Adzuna
-  (optional key), and your own LinkedIn job-alert emails.
+- Fetches from RemoteOK, Remotive, Arbeitnow, We Work Remotely, Himalayas, Jobicy, Adzuna, Y Combinator
+- Reads job-alert emails from your own inbox, read-only: LinkedIn, Wellfound, Indeed
 - Collapses the same job appearing on several boards into one row, so one real vacancy produces
   one score and one cover letter rather than five.
 - Recovers the job description for LinkedIn alerts by fetching the public job page, so those roles

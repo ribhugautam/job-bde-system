@@ -86,6 +86,22 @@ around Nov 2029 as `yearsOfExperience()` crosses 6; other cases expire 2031 and
 2033. They fail loudly as red tests, never as silent wrong behaviour.
 `fit.test.ts` shows the immunisation — pass `years` explicitly.
 
+## Deferred
+
+**Upwork — blocked on the operator, not on code.** A mailbox scan found exactly
+one message from upwork.com in 60 days, and it was a security notice, not a job
+alert. There is nothing to parse.
+
+To unblock: sign in to Upwork, run a job search worth keeping, save it, and turn
+on email alerts for that saved search. Once those digests arrive, Upwork becomes
+one more `AlertSource` entry in `lib/infra/sources/email/registry.ts` — capture a
+fixture with `scripts/capture-alert-fixtures.ts`, write the parser against it,
+register it. The dead `ENABLE_UPWORK_RSS` flag and `lib/infra/sources/upwork.ts`
+remain untouched until then.
+
+**VirtualVocations** is a second drop-in: 60 alert emails already arriving,
+remote-focused. Same three steps.
+
 ## Traps for the next person
 
 **`jobs.remote` still carries `.default(true)`.** Removing it made drizzle-kit
