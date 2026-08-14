@@ -56,9 +56,16 @@ export async function fetchFilteredJobs(
   const conditions = jobFilterConditions(filters);
   const where = conditions.length ? and(...conditions) : undefined;
 
+  // Both sorts end on `id` because neither key is unique. Feed-sourced dates
+  // are day-granular, so a shared postedAt is common — without the tiebreak
+  // SQLite is free to return tied rows in any order, and the list reshuffles
+  // between renders of the same query.
   const order =
     filters.sort === "newest"
-      ? [desc(sql`coalesce(${schema.jobs.postedAt}, ${schema.jobs.fetchedAt})`)]
+      ? [
+          desc(sql`coalesce(${schema.jobs.postedAt}, ${schema.jobs.fetchedAt})`),
+          desc(schema.jobs.id),
+        ]
       : [desc(schema.jobs.score), desc(schema.jobs.id)];
 
   const [rows, totals] = await Promise.all([

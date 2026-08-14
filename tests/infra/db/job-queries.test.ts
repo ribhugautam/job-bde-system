@@ -131,6 +131,20 @@ describe("fetchFilteredJobs", () => {
     expect(rows[0].title).toBe("new");
   });
 
+  // Feed dates are day-granular, so ties are the normal case rather than an
+  // edge one. Without a second sort key SQLite may return tied rows in any
+  // order, and the same URL renders a different list each time.
+  it("orders tied newest timestamps stably, newest id first", async () => {
+    const postedAt = new Date("2026-01-01");
+    await seed([{ title: "inserted first", postedAt }, { title: "inserted second", postedAt }]);
+
+    const first = await fetchFilteredJobs(db, { ...DEFAULT_JOB_FILTERS, sort: "newest" }, 50);
+    const second = await fetchFilteredJobs(db, { ...DEFAULT_JOB_FILTERS, sort: "newest" }, 50);
+
+    expect(first.rows.map((r) => r.title)).toEqual(["inserted second", "inserted first"]);
+    expect(second.rows.map((r) => r.id)).toEqual(first.rows.map((r) => r.id));
+  });
+
   // total is the count BEFORE the limit — it drives the "59 of 695" readout,
   // which would be a lie if it counted only the page.
   it("reports the total matching count, not the page size", async () => {
