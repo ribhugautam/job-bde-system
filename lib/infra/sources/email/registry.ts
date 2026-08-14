@@ -27,6 +27,22 @@ export const INDEED_ALERTS: AlertSource = {
   name: "indeed_alert",
   fromDomain: "indeed.com",
   days: 3,
+  // indeed.com sends far more than job digests: application-status updates,
+  // saved-search nudges, password resets. parseIndeedAlert reads title and
+  // company POSITIONALLY off the first two lines, which is only a valid
+  // shortcut for the digest template — fed anything else, it would store
+  // whatever text sits there as a fabricated job's title and company.
+  //
+  // DELIBERATELY PERMISSIVE, not a tight allowlist. The two observed digest
+  // subject shapes are "Apply to jobs at X, Y and Z" and "<Title> @
+  // <Company>", so this matches either the "apply to jobs" opener or a bare
+  // "@" anywhere in the subject. The operator's original complaint was jobs
+  // NOT showing up, so silently dropping a real alert because its subject
+  // wording drifted is worse than the occasional malformed row — and a
+  // malformed row is cheap here anyway, because the parser's own positional
+  // guards already degrade a bad card to a skipped one rather than a
+  // confident wrong value.
+  subjectFilter: (subject) => /^apply to jobs\b|@/i.test(subject.trim()),
   parse: parseIndeedAlert,
   tags: ["indeed-alert"],
 };

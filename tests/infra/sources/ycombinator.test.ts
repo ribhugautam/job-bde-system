@@ -67,4 +67,40 @@ describe("parseYCPayload", () => {
     expect(restricted.length).toBeGreaterThan(0);
     for (const job of restricted) expect(job.geoRegions).toContain("us");
   });
+
+  it("does not restrict a posting whose own location independently resolves eligible", () => {
+    // Cyble: "US citizen/visa only" (a company-level default) but its
+    // location is "Bengaluru, KA, IN / Bengaluru, Karnataka, IN" — an
+    // Indian office. The two facts conflict, so neither is asserted, and
+    // deriveJobFacts() falls through to deriveGeo(location) instead.
+    const cyble = jobs.find((j) => j.company === "Cyble");
+    expect(cyble).toBeDefined();
+    expect(cyble!.geoEligibility).toBeUndefined();
+    expect(cyble!.geoRegions).toBeUndefined();
+
+    // Scispot: same visa string, but its location's own parenthesised
+    // region list explicitly lists IN — also a conflict, also unasserted.
+    const scispot = jobs.find((j) => j.company === "Scispot");
+    expect(scispot).toBeDefined();
+    expect(scispot!.geoEligibility).toBeUndefined();
+    expect(scispot!.geoRegions).toBeUndefined();
+  });
+
+  it("still restricts a US-only-visa posting whose location does not resolve eligible", () => {
+    // Turing Labs: US-only visa, and its location ("Palo Alto, CA, US")
+    // independently resolves restricted too — no conflict, the visa claim
+    // stands.
+    const turingLabs = jobs.find((j) => j.company === "Turing Labs Inc.");
+    expect(turingLabs).toBeDefined();
+    expect(turingLabs!.geoEligibility).toBe("restricted");
+    expect(turingLabs!.geoRegions).toEqual(["us"]);
+
+    // Encord: US-only visa, location "London" — deriveGeo("London") has no
+    // city table and reads as unknown, not eligible, so there is still no
+    // conflict and the visa claim stands.
+    const encord = jobs.find((j) => j.company === "Encord");
+    expect(encord).toBeDefined();
+    expect(encord!.geoEligibility).toBe("restricted");
+    expect(encord!.geoRegions).toEqual(["us"]);
+  });
 });

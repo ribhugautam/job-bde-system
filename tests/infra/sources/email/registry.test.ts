@@ -19,10 +19,11 @@ describe("alert source registry", () => {
     expect(keep("An update from Flowbit, Edensign and 5 others")).toBe(false);
   });
 
-  it("keeps Indeed's job digests", () => {
-    const keep = INDEED_ALERTS.subjectFilter;
-    if (!keep) return;
+  it("keeps Indeed's job digests and rejects obvious non-job mail", () => {
+    const keep = INDEED_ALERTS.subjectFilter!;
     expect(keep("Apply to jobs at Wits Innovation Lab, snabs solution and Yaarify")).toBe(true);
     expect(keep("Front End Developer @ Techihire")).toBe(true);
+    expect(keep("Your application was viewed")).toBe(false);
+    expect(keep("Reset your password")).toBe(false);
   });
 });

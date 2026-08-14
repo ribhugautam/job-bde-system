@@ -56,6 +56,12 @@ describe("toRawJobs", () => {
     expect(toRawJobs(SOURCE, [parsed()])[0].tags).toEqual(["test-alert"]);
   });
 
+  it("carries postedAt through onto the RawJob, and leaves it undefined when absent", () => {
+    const date = new Date("2026-08-10T00:00:00Z");
+    expect(toRawJobs(SOURCE, [parsed({ postedAt: date })])[0].postedAt).toEqual(date);
+    expect(toRawJobs(SOURCE, [parsed()])[0].postedAt).toBeUndefined();
+  });
+
   it("drops duplicates by id within one run", () => {
     expect(toRawJobs(SOURCE, [parsed(), parsed()])).toHaveLength(1);
   });

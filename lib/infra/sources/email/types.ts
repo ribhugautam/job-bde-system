@@ -27,6 +27,13 @@ export type ParsedAlertJob = {
   salaryText?: string;
   /** Years of experience when the digest states it — Wellfound does. */
   minYears?: number;
+  /**
+   * The email's send date. Parsers never set this — they see only the HTML
+   * body, not the envelope — so lib/infra/mail/alert-ingest.ts attaches it
+   * from `mail.date` after calling `parse()`, the same value
+   * fetchLinkedInAlerts already threads through for its own RawJobs.
+   */
+  postedAt?: Date;
 };
 
 export type AlertSource = {

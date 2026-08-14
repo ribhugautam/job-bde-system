@@ -1,4 +1,4 @@
-import { deriveExperience } from "@/lib/domain/facts";
+import { deriveExperience, deriveGeo } from "@/lib/domain/facts";
 import type { GeoEligibility } from "@/lib/domain/facts";
 import type { RawJob } from "@/lib/domain/types";
 
@@ -88,6 +88,25 @@ export function parseYCPayload(html: string): RawJob[] {
     // correctly yields nothing.
     const experience = deriveExperience(p.minExperience ?? "");
 
+    // `visa` is a COMPANY-level default — YC asks each company to state it
+    // once, and every one of that company's postings inherits the same
+    // string regardless of which office the individual posting is for.
+    // `location` is stated PER POSTING. When a company says "US
+    // citizen/visa only" but a specific posting's location independently
+    // resolves eligible (e.g. an India office), the two facts conflict, and
+    // this codebase's rule for conflicting stated facts is to assert
+    // neither — not to prefer the coarser, company-wide default over the
+    // more specific, per-posting one. Emitting no geo claim here lets
+    // deriveJobFacts() fall through to deriveGeo(location) instead, which is
+    // exactly that more specific evidence. When the two agree (or location
+    // says nothing), the visa claim stands as before.
+    const visaGeo = visaToGeo(p.visa);
+    const locationGeo = deriveGeo(p.location);
+    const geo =
+      visaGeo.geoEligibility === "restricted" && locationGeo.eligibility === "eligible"
+        ? {}
+        : visaGeo;
+
     out.push({
       source: "ycombinator",
       sourceId: id,
@@ -102,7 +121,7 @@ export function parseYCPayload(html: string): RawJob[] {
       minYears: experience.minYears,
       maxYears: experience.maxYears,
       experienceText: experience.experienceText,
-      ...visaToGeo(p.visa),
+      ...geo,
       // The listing payload carries no description; the job is scored on title,
       // skills and location until something richer arrives.
       description: undefined,

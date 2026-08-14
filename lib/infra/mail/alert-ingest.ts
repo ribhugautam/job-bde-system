@@ -51,6 +51,7 @@ export function toRawJobs(source: AlertSource, parsed: ParsedAlertJob[]): RawJob
       minYears: p.minYears,
       salaryText: p.salaryText,
       description: p.description,
+      postedAt: p.postedAt,
       tags: source.tags,
       // A digest without a snippet is scored on its title alone; enrichment may
       // recover more later.
@@ -87,7 +88,11 @@ export async function fetchAlertSource(source: AlertSource): Promise<RawJob[]> {
           typeof mail.html === "string"
             ? mail.html
             : mail.textAsHtml || `<pre>${mail.text || ""}</pre>`;
-        collected.push(...source.parse(html));
+        // Thread the message date through the same way fetchLinkedInAlerts
+        // does. Parsers only ever see the HTML body, never the envelope, so
+        // this is the one place the date is in scope to attach.
+        const postedAt = mail.date || undefined;
+        collected.push(...source.parse(html).map((job) => ({ ...job, postedAt })));
       } catch {
         // A single malformed message must not cost the rest of the digest.
         continue;

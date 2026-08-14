@@ -1,8 +1,9 @@
 // Cross-source identity for jobs and leads.
 //
-// The pipeline pulls the same real-world job from up to eight sources
+// The pipeline pulls the same real-world job from up to eleven sources
 // (RemoteOK, Remotive, Arbeitnow, WeWorkRemotely, Himalayas, Jobicy, Adzuna,
-// LinkedIn alert emails). Keyed on (source, sourceId) alone, one job becomes N
+// LinkedIn alert emails, Wellfound alert emails, Indeed alert emails, Y
+// Combinator). Keyed on (source, sourceId) alone, one job becomes N
 // rows, N scored entries and N drafted cover letters. The fingerprint below is
 // the identity key that collapses them: it is what jobs.fingerprint and
 // leads.fingerprint store, and what the merge step groups on.

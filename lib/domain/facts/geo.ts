@@ -101,10 +101,12 @@ export type GeoFacts = { regions: string[]; eligibility: GeoEligibility };
  * Precedence matters and is deliberate:
  *   1. worldwide wins outright — "Remote, Worldwide (US timezone overlap)" is
  *      unrestricted, and an incidental "US" must not downgrade it
- *   2. an explicit region list is read for IN before anything else
- *   3. India / APAC -> eligible
- *   4. a named excluding region -> restricted
- *   5. otherwise unknown
+ *   2. an unambiguous India place name outranks a single-code region list —
+ *      see the guard on `list` below
+ *   3. an explicit region list is read for IN before anything else
+ *   4. India / APAC -> eligible
+ *   5. a named excluding region -> restricted
+ *   6. otherwise unknown
  */
 export function deriveGeo(location?: string): GeoFacts {
   const text = (location ?? "").replace(/[\s,]+$/, "").trim();
@@ -114,8 +116,15 @@ export function deriveGeo(location?: string): GeoFacts {
     return { regions: ["worldwide"], eligibility: "worldwide" };
   }
 
-  // "Remote (GB; DE; NL)" — an explicit allow-list of countries.
-  const list = text.match(REGION_LIST_RE)?.[1];
+  // "Remote (GB; DE; NL)" — an explicit allow-list of countries. Skipped when
+  // an unambiguous India place name is already present in the string, e.g.
+  // "Bengaluru (KA)": without this guard, the single two-letter state code in
+  // parentheses (added to read Y Combinator's "Remote (IN)" form) outranks
+  // the unambiguous, unmistakably-India city name it is parenthesised after,
+  // and "Bengaluru (KA)" reads as a restriction to the region-list code "ka"
+  // instead of the city fact it actually states. The city name is the more
+  // specific, unambiguous claim, so it wins.
+  const list = UNAMBIGUOUS_INDIA_RE.test(text) ? undefined : text.match(REGION_LIST_RE)?.[1];
   if (list) {
     const codes = list
       .split(/[;,]/)

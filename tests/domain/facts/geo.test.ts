@@ -178,6 +178,35 @@ describe("single-country region lists", () => {
   it("recognises Faridabad, seen in real Wellfound data", () => {
     expect(deriveGeo("Faridabad").eligibility).toBe("eligible");
   });
+
+  it("lets an unambiguous India city name outrank a single-code region list", () => {
+    // Widening the region-list branch to accept a single two-letter code
+    // (so "Remote (IN)" resolves) meant a bare Indian state code in
+    // parentheses started to outrank the unambiguous city name it follows,
+    // because the region-list branch ran first. "Bengaluru (KA)" was
+    // regressing to restricted ["ka"] instead of eligible ["in"].
+    expect(deriveGeo("Bengaluru (KA)")).toEqual({ regions: ["in"], eligibility: "eligible" });
+    expect(deriveGeo("Faridabad (HR)")).toEqual({ regions: ["in"], eligibility: "eligible" });
+    expect(deriveGeo("Noida (UP)")).toEqual({ regions: ["in"], eligibility: "eligible" });
+    expect(deriveGeo("Mumbai (MH)")).toEqual({ regions: ["in"], eligibility: "eligible" });
+    expect(deriveGeo("Chennai (TN)")).toEqual({ regions: ["in"], eligibility: "eligible" });
+  });
+
+  it("still reads a single-code region list when no unambiguous India name is present", () => {
+    // The guard above must not swallow the legitimate single-code case this
+    // branch exists for.
+    expect(deriveGeo("Remote (IN)")).toEqual({ regions: ["in"], eligibility: "eligible" });
+    expect(deriveGeo("Remote (US)")).toEqual({ regions: ["us"], eligibility: "restricted" });
+    expect(deriveGeo("Remote (IN; US)")).toEqual({
+      regions: ["in", "us"],
+      eligibility: "eligible",
+    });
+    expect(deriveGeo("Remote (GB; DE; NL; FR)")).toEqual({
+      regions: ["gb", "de", "nl", "fr"],
+      eligibility: "restricted",
+    });
+    expect(deriveGeo("Bengaluru (Hybrid)")).toEqual({ regions: ["in"], eligibility: "eligible" });
+  });
 });
 
 describe("worldwide phrasing gaps found in real Y Combinator/Wellfound data", () => {
