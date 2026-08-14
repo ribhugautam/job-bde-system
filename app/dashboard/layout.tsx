@@ -46,43 +46,43 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       */}
       <footer className="border-t border-(--border) px-6 py-4 text-xs text-(--text-faint)">
         Job data from{" "}
-        <a href="https://himalayas.app" className="hover:text-neutral-400">
+        <a href="https://himalayas.app" className="hover:text-(--text-muted)">
           Himalayas
         </a>
         ,{" "}
-        <a href="https://jobicy.com" className="hover:text-neutral-400">
+        <a href="https://jobicy.com" className="hover:text-(--text-muted)">
           Jobicy
         </a>
         ,{" "}
-        <a href="https://remotive.com" className="hover:text-neutral-400">
+        <a href="https://remotive.com" className="hover:text-(--text-muted)">
           Remotive
         </a>
         ,{" "}
-        <a href="https://remoteok.com" className="hover:text-neutral-400">
+        <a href="https://remoteok.com" className="hover:text-(--text-muted)">
           RemoteOK
         </a>
         ,{" "}
-        <a href="https://www.arbeitnow.com" className="hover:text-neutral-400">
+        <a href="https://www.arbeitnow.com" className="hover:text-(--text-muted)">
           Arbeitnow
         </a>
         ,{" "}
-        <a href="https://weworkremotely.com" className="hover:text-neutral-400">
+        <a href="https://weworkremotely.com" className="hover:text-(--text-muted)">
           We Work Remotely
         </a>
         ,{" "}
-        <a href="https://www.adzuna.com" className="hover:text-neutral-400">
+        <a href="https://www.adzuna.com" className="hover:text-(--text-muted)">
           Jobs by Adzuna
         </a>
         ,{" "}
-        <a href="https://www.ycombinator.com" className="hover:text-neutral-400">
+        <a href="https://www.ycombinator.com" className="hover:text-(--text-muted)">
           Y Combinator
         </a>
         ,{" "}
-        <a href="https://wellfound.com" className="hover:text-neutral-400">
+        <a href="https://wellfound.com" className="hover:text-(--text-muted)">
           Wellfound
         </a>{" "}
         and{" "}
-        <a href="https://www.indeed.com" className="hover:text-neutral-400">
+        <a href="https://www.indeed.com" className="hover:text-(--text-muted)">
           Indeed
         </a>
         .
