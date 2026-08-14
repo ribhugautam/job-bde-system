@@ -1,9 +1,11 @@
 import { getDb } from "@/lib/infra/db/client";
 import { parseJobFilters } from "@/lib/domain/jobs/filters";
 import { fetchFilteredJobs, fetchJobSources } from "@/lib/infra/db/job-queries";
+import { JOB_STATUSES } from "@/lib/pipeline/state";
 import FilterBar from "@/components/jobs/FilterBar";
 import JobRow from "@/components/jobs/JobRow";
 import DismissButton from "@/components/jobs/DismissButton";
+import { StatusSelect } from "@/components/ActionButtons";
 import DbErrorNotice from "@/components/DbErrorNotice";
 
 export const dynamic = "force-dynamic";
@@ -48,22 +50,49 @@ export default async function JobsPage({ searchParams }: PageProps<"/dashboard/j
       />
       <div>
         {rows.map((job) => (
-          <div key={job.id} className="group relative">
+          // The wrapper repeats the row's hover tint so the control group below
+          // can sit on the same colour. Without it the row's own hover
+          // background drops the moment the pointer moves onto the overlay —
+          // the overlay is a sibling of the row, not a child of it.
+          <div key={job.id} className="group relative hover:bg-(--surface-hover)">
             <JobRow job={job} />
             {/*
-              Only `found` and `ignored` get the control: dismiss/restore is a
-              lossless round trip only between those two statuses. Restore
-              hardcodes the target status to `found`, and storing where a job
-              actually was is off the table (no schema change) — so a job that
-              has moved past `found` (e.g. ready_for_review, matched) must not
-              be offered dismiss at all, or restoring it would silently drop
-              it out of whatever queue tracks that status.
+              The hover-revealed control group. It has a solid background and
+              horizontal padding because it lands on top of the row's source
+              column, which sits at the same right edge in the same 11px type:
+              without one they overlapped into unreadable mush at xl and wider.
+              min-h-full keeps it the height of the row, and lets it grow
+              downward rather than clip when a control renders an error.
             */}
-            {(job.status === "found" || job.status === "ignored") && (
-              <span className="absolute right-3 top-2 opacity-0 transition group-hover:opacity-100 focus-within:opacity-100">
+            <div className="absolute right-1 top-0 flex min-h-full items-center gap-2 rounded bg-(--surface-hover) px-2 opacity-0 transition group-hover:opacity-100 focus-within:opacity-100">
+              {/*
+                Ungated, unlike dismiss: setting any status is the point. Six of
+                the eleven in JOB_STATUSES — matched, rejected, responded,
+                interview, offer, closed — are reachable from nowhere else in
+                the UI, since mark-applied only toggles ready_for_review ⇄ sent
+                and dismiss only toggles found ⇄ ignored. The list comes from
+                lib/pipeline/state.ts; a local copy here is what drifted last
+                time.
+              */}
+              <StatusSelect
+                entity="job"
+                id={job.id}
+                status={job.status}
+                options={[...JOB_STATUSES]}
+              />
+              {/*
+                Only `found` and `ignored` get dismiss: dismiss/restore is a
+                lossless round trip only between those two statuses. Restore
+                hardcodes the target status to `found`, and storing where a job
+                actually was is off the table (no schema change) — so a job that
+                has moved past `found` (e.g. ready_for_review, matched) must not
+                be offered dismiss at all, or restoring it would silently drop
+                it out of whatever queue tracks that status.
+              */}
+              {(job.status === "found" || job.status === "ignored") && (
                 <DismissButton jobId={job.id} dismissed={job.status === "ignored"} />
-              </span>
-            )}
+              )}
+            </div>
           </div>
         ))}
         {rows.length === 0 && (
