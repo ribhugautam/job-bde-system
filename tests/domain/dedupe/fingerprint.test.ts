@@ -164,52 +164,82 @@ describe("locationBucket", () => {
     expect(locationBucket("", true)).toBe("remote");
   });
 
+  it("treats an unknown remote status the same as a known-remote one", () => {
+    // `remote` is tri-state. Adzuna's is now an honest `undefined` rather than
+    // a hardcoded flag, and a LinkedIn alert whose location line names no
+    // arrangement is `undefined` too - bucketing either by the office city
+    // text would fragment the same remote job across boards exactly as
+    // trusting the text over an explicit `true` would. So `undefined` and
+    // `true` must bucket identically.
+    expect(locationBucket("London, UK", undefined)).toBe(
+      locationBucket("London, UK", true)
+    );
+    expect(locationBucket("London, UK")).toBe("remote");
+    expect(locationBucket("London, UK", undefined)).toBe("remote");
+  });
+
+  it("still buckets an explicitly non-remote job by its location", () => {
+    // Only a positively-known on-site/hybrid job - remote === false - falls
+    // through to the location text below.
+    expect(locationBucket("London, UK", false)).toBe("uk");
+  });
+
   it("buckets on-site locations at country granularity", () => {
-    expect(locationBucket("London, UK")).toBe("uk");
-    expect(locationBucket("London")).toBe("uk");
-    expect(locationBucket("Berlin, Germany")).toBe("de");
-    expect(locationBucket("Berlin")).toBe("de");
-    expect(locationBucket("Bengaluru, India")).toBe("in");
-    expect(locationBucket("Bangalore")).toBe("in");
-    expect(locationBucket("Toronto, ON, Canada")).toBe("ca");
+    // remote:false throughout - only a positively-known non-remote job
+    // reaches the location-text bucketing this test is exercising.
+    expect(locationBucket("London, UK", false)).toBe("uk");
+    expect(locationBucket("London", false)).toBe("uk");
+    expect(locationBucket("Berlin, Germany", false)).toBe("de");
+    expect(locationBucket("Berlin", false)).toBe("de");
+    expect(locationBucket("Bengaluru, India", false)).toBe("in");
+    expect(locationBucket("Bangalore", false)).toBe("in");
+    expect(locationBucket("Toronto, ON, Canada", false)).toBe("ca");
     // Deliberately coarse: two US cities share a bucket rather than splitting
     // one job across boards that write the same place differently.
-    expect(locationBucket("San Francisco, CA")).toBe("us");
-    expect(locationBucket("New York, NY")).toBe("us");
-    expect(locationBucket("New York, United States")).toBe("us");
+    expect(locationBucket("San Francisco, CA", false)).toBe("us");
+    expect(locationBucket("New York, NY", false)).toBe("us");
+    expect(locationBucket("New York, United States", false)).toBe("us");
     // State abbreviations outrank the city table, which is what keeps
     // Cambridge MA on the US side of the fence.
-    expect(locationBucket("Cambridge, MA")).toBe("us");
+    expect(locationBucket("Cambridge, MA", false)).toBe("us");
   });
 
   it("sees through the qualifiers boards wrap around a place name", () => {
-    // Remotive ships "USA Only" / "UK Only" as its candidate location.
-    expect(locationBucket("USA Only")).toBe("us");
-    expect(locationBucket("UK Only")).toBe("uk");
-    expect(locationBucket("Europe Only")).toBe("eu");
-    expect(locationBucket("Greater London Area")).toBe("uk");
-    expect(locationBucket("Bay Area")).toBe("us");
-    expect(locationBucket("Berlin or Munich")).toBe("de");
-    expect(locationBucket("USA Only")).toBe(locationBucket("United States"));
+    // remote:false - see the note on the previous test.
+    expect(locationBucket("USA Only", false)).toBe("us");
+    expect(locationBucket("UK Only", false)).toBe("uk");
+    expect(locationBucket("Europe Only", false)).toBe("eu");
+    expect(locationBucket("Greater London Area", false)).toBe("uk");
+    expect(locationBucket("Bay Area", false)).toBe("us");
+    expect(locationBucket("Berlin or Munich", false)).toBe("de");
+    expect(locationBucket("USA Only", false)).toBe(
+      locationBucket("United States", false)
+    );
   });
 
   it("returns 'unknown' when there is nothing to bucket on", () => {
-    expect(locationBucket()).toBe("unknown");
-    expect(locationBucket("")).toBe("unknown");
-    expect(locationBucket("   ")).toBe("unknown");
-    expect(locationBucket("-")).toBe("unknown");
-    expect(locationBucket("Multiple locations")).toBe("unknown");
-    expect(locationBucket("N/A")).toBe("unknown");
+    // remote:false - an unknown-remote job with nothing to go on buckets
+    // "remote" (see "treats an unknown remote status..." above), so this
+    // "nothing in the text either" case is only reachable once remote is
+    // positively known to be false.
+    expect(locationBucket(undefined, false)).toBe("unknown");
+    expect(locationBucket("", false)).toBe("unknown");
+    expect(locationBucket("   ", false)).toBe("unknown");
+    expect(locationBucket("-", false)).toBe("unknown");
+    expect(locationBucket("Multiple locations", false)).toBe("unknown");
+    expect(locationBucket("N/A", false)).toBe("unknown");
   });
 
   it("falls back to a stable token for places it does not know", () => {
-    expect(locationBucket("Reykjavik")).toBe("reykjavik");
-    expect(locationBucket("Reykjavik")).toBe(locationBucket("reykjavik"));
+    expect(locationBucket("Reykjavik", false)).toBe("reykjavik");
+    expect(locationBucket("Reykjavik", false)).toBe(
+      locationBucket("reykjavik", false)
+    );
   });
 
   it("does not merge two genuinely different countries", () => {
-    expect(locationBucket("Berlin, Germany")).not.toBe(
-      locationBucket("New York, NY")
+    expect(locationBucket("Berlin, Germany", false)).not.toBe(
+      locationBucket("New York, NY", false)
     );
   });
 });
@@ -279,6 +309,27 @@ describe("fingerprintJob - the same job from two boards", () => {
       remote: true,
     });
     expect(adzuna).toBe(jobicy);
+  });
+
+  it("matches RemoteOK against a real Adzuna listing whose remote is honestly undefined", () => {
+    // Adzuna no longer hardcodes remote:true - it passes undefined when it
+    // genuinely does not know. Without the tri-state guard, "London, UK"
+    // would bucket by country text ("gb") instead of merging with the same
+    // vacancy from a source that flags it remote, producing a duplicate row,
+    // score and cover letter for one job.
+    const remoteok = fingerprintJob({
+      title: "Backend Engineer",
+      company: "Acme",
+      location: "Remote",
+      remote: true,
+    });
+    const adzuna = fingerprintJob({
+      title: "Backend Engineer",
+      company: "Acme",
+      location: "London, UK",
+      remote: undefined,
+    });
+    expect(adzuna).toBe(remoteok);
   });
 
   it("matches across gender tags, employment type and urgency noise", () => {
@@ -488,7 +539,11 @@ describe("fingerprintJob - stability", () => {
   });
 
   it("still produces a key when the source gave us almost nothing", () => {
-    expect(fingerprintJob({ title: "", company: "" })).toBe(
+    // remote:false - an unspecified remote status buckets "remote" even with
+    // no location text (see "treats an unknown remote status..." above), so
+    // reaching "unknown" here needs the same positively-known-false as any
+    // other on-site case.
+    expect(fingerprintJob({ title: "", company: "", remote: false })).toBe(
       "anon|untitled|unknown"
     );
   });

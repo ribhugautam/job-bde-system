@@ -747,18 +747,21 @@ function lookupKeys(segment: string): string[] {
  *
  * Two deliberate coarsenings:
  *
- *  - The `remote` flag wins over the location text. Every source in this
- *    pipeline sets remote:true, and several still ship an office city
- *    (Adzuna sends "London, UK"). Honouring the text there would fragment the
- *    same remote job across boards, which is exactly what this key exists to
- *    prevent.
+ *  - `remote` is tri-state, and only an explicit `false` opts out of the
+ *    remote bucket. `true` obviously means remote; `undefined` means "we do
+ *    not know" (Adzuna passes it honestly now, and so does a LinkedIn alert
+ *    whose location line names no arrangement), and bucketing a possibly-
+ *    remote job by an office city (Adzuna still ships "London, UK") would
+ *    fragment the same remote job across boards, which is exactly what this
+ *    key exists to prevent. Only a positively-known on-site or hybrid job -
+ *    `remote === false` - falls through to the location text below.
  *  - Sub-country detail is discarded, so "San Francisco, CA" and
  *    "New York, NY" share the "us" bucket. That can merge two genuinely
  *    different postings only when the company AND the normalized title also
  *    match; over-splitting, by contrast, defeats the whole key.
  */
 export function locationBucket(raw?: string, remote?: boolean): string {
-  if (remote === true) return "remote";
+  if (remote !== false) return "remote";
 
   const folded = foldCase(raw ?? "")
     .replace(/\./g, "")

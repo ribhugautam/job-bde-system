@@ -50,6 +50,7 @@ import { deriveJobFacts, FACTS_VERSION } from "../lib/domain/facts";
 import { repairMangledCard } from "../lib/infra/linkedin/alerts";
 import { extractJobId } from "../lib/infra/linkedin/enrich";
 import { scoreJob } from "../lib/domain/scoring/score";
+import { factsToRow } from "../lib/pipeline/stages/ingest";
 import type { RawJob } from "../lib/domain/types";
 
 // Static import, NOT a top-level `await import(...)`. package.json has no
@@ -190,6 +191,12 @@ async function main() {
 
     const facts = deriveJobFacts(raw);
     const scored = scoreJob({ ...raw, ...facts, sparse: !raw.description });
+    // The single source of the arrangement -> remote translation - see the
+    // comment on factsToRow in lib/pipeline/stages/ingest.ts for why "unknown"
+    // must become an explicit null rather than an omitted key. Renamed on
+    // destructure: `arrangement` above already names the (possibly repaired)
+    // INPUT fed to deriveJobFacts, and this is deriveJobFacts's OUTPUT.
+    const { arrangement: derivedArrangement, remote } = factsToRow(facts);
 
     after.push(facts.arrangement);
     geoAfter.push(facts.geoEligibility);
@@ -200,7 +207,7 @@ async function main() {
         .set({
           title,
           location,
-          arrangement: facts.arrangement,
+          arrangement: derivedArrangement,
           geoEligibility: facts.geoEligibility,
           geoRegions: facts.geoRegions,
           // deriveJobFacts leaves these undefined when the posting states no
@@ -217,10 +224,7 @@ async function main() {
           experienceText: facts.experienceText ?? null,
           easyApply: facts.easyApply ?? null,
           factsVersion: FACTS_VERSION,
-          // jobs.remote still carries `.default(true)`, so "unknown" must be
-          // written as an explicit null rather than omitted.
-          remote:
-            facts.arrangement === "unknown" ? null : facts.arrangement === "remote",
+          remote,
           score: scored.score,
           scoreReasons: scored.reasons,
           // A row rejected on a corrupt score deserves another pass. Rows the

@@ -8,6 +8,7 @@ import {
 } from "@/lib/infra/linkedin/enrich";
 import type { StageContext, StageResult } from "../context";
 import { claimJobs, failJob } from "./claim";
+import { mergeExperienceFacts } from "./ingest";
 
 // ---------------------------------------------------------------------------
 // Enrich: recover the job description that alert emails do not carry.
@@ -97,7 +98,7 @@ export async function runEnrich(ctx: StageContext): Promise<StageResult> {
 
       // Not a LinkedIn URL, so there is nothing to enrich from. Move on.
       if (!linkedinId) {
-        await advance(ctx, job.id, undefined, undefined);
+        await advance(ctx, job.id, job.title, undefined, undefined);
         processed++;
         continue;
       }
@@ -113,6 +114,7 @@ export async function runEnrich(ctx: StageContext): Promise<StageResult> {
         await advance(
           ctx,
           job.id,
+          job.title,
           cached.outcome === "ok" ? cached.description ?? undefined : undefined,
           cached.outcome === "ok" ? "linkedin_public" : undefined,
           recoveredCompany
@@ -166,12 +168,19 @@ export async function runEnrich(ctx: StageContext): Promise<StageResult> {
 
       if (result.outcome === "ok" && result.description) {
         ctx.counters.jobsEnriched++;
-        await advance(ctx, job.id, result.description, "linkedin_public", recoveredCompany);
+        await advance(
+          ctx,
+          job.id,
+          job.title,
+          result.description,
+          "linkedin_public",
+          recoveredCompany
+        );
       } else {
         // Blocked, gone, or broken. Score it on the title and carry on; this is
         // a degraded result, not a failure worth retrying against a backoff.
         // A company may still have been recovered even with no description.
-        await advance(ctx, job.id, undefined, undefined, recoveredCompany);
+        await advance(ctx, job.id, job.title, undefined, undefined, recoveredCompany);
       }
       processed++;
     } catch (err) {
@@ -185,15 +194,42 @@ export async function runEnrich(ctx: StageContext): Promise<StageResult> {
 async function advance(
   ctx: StageContext,
   jobId: number,
+  title: string,
   description: string | undefined,
   descriptionSource: string | undefined,
   company?: string
 ) {
+  // A description written here is new evidence deriveExperience has never seen
+  // - the row's stored minYears/maxYears/experienceText were derived from the
+  // TITLE alone (alert emails carry no description), and scoreJob (by design,
+  // see tests/domain/scoring/score.test.ts) trusts those stored fields as
+  // given rather than re-parsing text itself. Leaving them stale here would
+  // mean an enrichment that recovers "10+ years required" never reaches the
+  // score stage at all. Reuses ingest.ts's mergeExperienceFacts rather than
+  // re-deriving inline: both call sites need the exact same rule - no new
+  // description text means no new evidence, so the stored fields are left
+  // untouched. arrangement/geo are NOT re-derived here: they read
+  // location/tags, never the description, and the description is the only
+  // thing that changed.
+  const experienceFacts = mergeExperienceFacts(title, description, Boolean(description));
+
   await ctx.db
     .update(schema.jobs)
     .set({
       ...(description ? { description, descriptionSource } : {}),
       ...(company ? { company } : {}),
+      // Coalesced to explicit `null` rather than left as `undefined`: drizzle's
+      // update().set() DROPS keys whose value is `undefined` from the SQL SET
+      // clause (mapUpdateSet in drizzle-orm/utils.cjs) instead of writing NULL,
+      // so an `undefined` here would leave the stale title-only-derived value
+      // in place - which is the exact regression this fix exists to close.
+      ...(experienceFacts
+        ? {
+            minYears: experienceFacts.minYears ?? null,
+            maxYears: experienceFacts.maxYears ?? null,
+            experienceText: experienceFacts.experienceText ?? null,
+          }
+        : {}),
       stage: "score",
       attempts: 0,
       lastError: null,

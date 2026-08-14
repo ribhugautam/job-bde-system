@@ -193,9 +193,11 @@ export type ParsedJobPage = { description?: string; company?: string };
  *
  * Prefers the JSON-LD JobPosting block: it is a published, structured contract
  * that changes far less often than LinkedIn's CSS class names. The class-name
- * selectors are only a fallback for pages that ship without it, and they carry
- * no company name — a page that falls through to them yields a description
- * alone.
+ * selectors are only a fallback for the DESCRIPTION when a page ships without
+ * one in its JSON-LD; the company name always comes from JSON-LD alone. So a
+ * page that falls through to the selectors still returns the company
+ * alongside the description whenever the JSON-LD stated one - not a
+ * description alone.
  *
  * Returns undefined fields when the page carries neither (a removed listing, or
  * a page that wants a login) rather than guessing.

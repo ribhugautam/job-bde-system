@@ -11,9 +11,14 @@ import type { WorkArrangement } from "./types";
 // The job DESCRIPTION is deliberately NOT scanned. Descriptions mention
 // "hybrid" and "remote" in passing constantly ("our hybrid cloud", "remote
 // procedure call", "we were remote-first until 2022"), and every such mention
-// would produce a confident wrong answer. Every source this system reads either
-// states the arrangement in the location line or is a remote-only board that
-// sets the flag, so the description adds noise and no signal.
+// would produce a confident wrong answer. Most sources this system reads
+// either state the arrangement in the location line or are a remote-only
+// board that hardcodes the flag - but not all: Adzuna does neither (its
+// `remote` is an honest `undefined`, not a hardcoded flag, and its location is
+// an office city, not an arrangement). Such jobs fall through every rule below
+// to `unknown` rather than have their description scanned - the correct
+// outcome for a source with no reliable evidence, not a gap to fill by
+// lowering this module's guard.
 // ---------------------------------------------------------------------------
 
 const HYBRID_RE = /\bhybrid\b/i;

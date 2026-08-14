@@ -32,17 +32,24 @@ export const jobs = sqliteTable(
     applyEmail: text("apply_email"), // set only if the listing itself publishes a plain apply-by-email address
     location: text("location"),
     /**
-     * DEPRECATED — read by nothing. `arrangement` is the source of truth for
-     * where a job is worked from; this column is consulted nowhere in the
-     * codebase and exists now only because it cannot yet be dropped cleanly.
+     * NOT dead: `arrangement` is the source of truth for where a job is
+     * worked from, but this column is still read in four places, so it
+     * cannot simply be dropped. `lib/pipeline/stages/draft.ts` reads it
+     * (`job.remote ?? undefined`, though nothing downstream in
+     * `lib/domain/drafting/` currently consumes the field). `score.ts` reads
+     * it. `scripts/reconcile-schema.ts` reads it to feed `fingerprintJob`.
+     * `scripts/backfill-facts.ts` reads it to feed `deriveJobFacts`, where it
+     * can decide `arrangement` when location and tags are both silent. Any
+     * change here has to check all four call sites first.
      *
      * `.default(true)` is still present today, deliberately, not an oversight.
      * Dropping it was tried: it made drizzle-kit emit a libSQL `ALTER COLUMN`
      * plus a DROP/CREATE pass on all 16 indexes across four tables, instead of
      * a pure `ADD COLUMN` migration — a rebuild-shaped change this plan will
-     * not risk against a live table holding 623 real rows for a column nothing
-     * reads. So the default stayed, and the migration that added `arrangement`
-     * and the rest of the structured-facts columns stayed additive-only.
+     * not risk against a live table holding 623 real rows for a column most
+     * callers now only fall back to. So the default stayed, and the migration
+     * that added `arrangement` and the rest of the structured-facts columns
+     * stayed additive-only.
      *
      * Because the default is still live, any insert path that omits `remote`
      * will silently persist `true`. Every insert MUST pass an explicit value
