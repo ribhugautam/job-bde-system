@@ -148,3 +148,83 @@ describe("deriveGeo", () => {
     expect(deriveGeo("Pune Division (Hybrid)").eligibility).toBe("eligible");
   });
 });
+
+describe("single-country region lists", () => {
+  it("reads a one-code list, which Y Combinator emits", () => {
+    expect(deriveGeo("Remote (IN)").eligibility).toBe("eligible");
+    expect(deriveGeo("Remote (US)").eligibility).toBe("restricted");
+  });
+
+  it("still handles multi-code lists exactly as before", () => {
+    expect(deriveGeo("Remote (IN; US)").eligibility).toBe("eligible");
+    expect(deriveGeo("Remote (GB; DE; NL; FR)").eligibility).toBe("restricted");
+  });
+
+  it("does not mistake a parenthetical word for a country code", () => {
+    // Two-letter uppercase only; "(Remote)" and "(Hybrid)" must not match.
+    expect(deriveGeo("Bengaluru (Hybrid)").eligibility).toBe("eligible");
+    expect(deriveGeo("Chinchilla (Remote)").eligibility).toBe("unknown");
+  });
+
+  it("does not read a trailing word after a code as part of the list", () => {
+    // "(IN Nowhere)" is not an anchored two-letter code list — the group must
+    // reach the closing paren directly, so REGION_LIST_RE does not match here.
+    // (Separately, "Remote (IN India)" resolves to eligible, but that is the
+    // literal word "India" being recognised on its own merits, not the region
+    // list logic — see the India-token tests above.)
+    expect(deriveGeo("Remote (IN Nowhere)").eligibility).toBe("unknown");
+  });
+
+  it("recognises Faridabad, seen in real Wellfound data", () => {
+    expect(deriveGeo("Faridabad").eligibility).toBe("eligible");
+  });
+
+  it("lets an unambiguous India city name outrank a single-code region list", () => {
+    // Widening the region-list branch to accept a single two-letter code
+    // (so "Remote (IN)" resolves) meant a bare Indian state code in
+    // parentheses started to outrank the unambiguous city name it follows,
+    // because the region-list branch ran first. "Bengaluru (KA)" was
+    // regressing to restricted ["ka"] instead of eligible ["in"].
+    expect(deriveGeo("Bengaluru (KA)")).toEqual({ regions: ["in"], eligibility: "eligible" });
+    expect(deriveGeo("Faridabad (HR)")).toEqual({ regions: ["in"], eligibility: "eligible" });
+    expect(deriveGeo("Noida (UP)")).toEqual({ regions: ["in"], eligibility: "eligible" });
+    expect(deriveGeo("Mumbai (MH)")).toEqual({ regions: ["in"], eligibility: "eligible" });
+    expect(deriveGeo("Chennai (TN)")).toEqual({ regions: ["in"], eligibility: "eligible" });
+  });
+
+  it("still reads a single-code region list when no unambiguous India name is present", () => {
+    // The guard above must not swallow the legitimate single-code case this
+    // branch exists for.
+    expect(deriveGeo("Remote (IN)")).toEqual({ regions: ["in"], eligibility: "eligible" });
+    expect(deriveGeo("Remote (US)")).toEqual({ regions: ["us"], eligibility: "restricted" });
+    expect(deriveGeo("Remote (IN; US)")).toEqual({
+      regions: ["in", "us"],
+      eligibility: "eligible",
+    });
+    expect(deriveGeo("Remote (GB; DE; NL; FR)")).toEqual({
+      regions: ["gb", "de", "nl", "fr"],
+      eligibility: "restricted",
+    });
+    expect(deriveGeo("Bengaluru (Hybrid)")).toEqual({ regions: ["in"], eligibility: "eligible" });
+  });
+});
+
+describe("worldwide phrasing gaps found in real Y Combinator/Wellfound data", () => {
+  it("treats 'Everywhere' alone as unrestricted", () => {
+    expect(deriveGeo("Everywhere")).toEqual({
+      regions: ["worldwide"],
+      eligibility: "worldwide",
+    });
+  });
+
+  it("treats Wellfound's 'Remote only, Everywhere' as unrestricted", () => {
+    expect(deriveGeo("Remote only, Everywhere").eligibility).toBe("worldwide");
+  });
+
+  it("prefers worldwide over an Indian city in the same real Wellfound string", () => {
+    // Real value (after the source strips the leading "Onsite or remote, "):
+    // "Faridabad, Remote (Everywhere)". Worldwide wins outright per precedence,
+    // even though Faridabad alone would otherwise resolve to eligible.
+    expect(deriveGeo("Faridabad, Remote (Everywhere)").eligibility).toBe("worldwide");
+  });
+});

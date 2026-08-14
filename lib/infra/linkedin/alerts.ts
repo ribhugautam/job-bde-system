@@ -1,8 +1,8 @@
-import { ImapFlow } from "imapflow";
 import { simpleParser } from "mailparser";
 import * as cheerio from "cheerio";
 import { RawJob } from "../sources/types";
 import { getEnv } from "@/lib/config/env";
+import { withMailbox } from "@/lib/infra/mail/imap";
 import { deriveArrangement, type WorkArrangement } from "@/lib/domain/facts";
 
 // ---------------------------------------------------------------------------
@@ -489,86 +489,53 @@ export async function fetchLinkedInAlerts(): Promise<RawJob[]> {
   const env = getEnv();
   if (!env.ENABLE_LINKEDIN_ALERTS) return [];
 
-  // The config module keeps the IMAP and Gmail keys separate; the fallback -
-  // "the app password you already use for sending also works for reading" -
-  // is a property of this connector, so it lives here.
-  const user = env.IMAP_USER ?? env.GMAIL_USER;
-  const pass = env.IMAP_PASSWORD ?? env.GMAIL_APP_PASSWORD;
-  if (!user || !pass) {
-    throw new Error(
-      "ENABLE_LINKEDIN_ALERTS=1 but no IMAP credentials. Set IMAP_USER/IMAP_PASSWORD, " +
-        "or GMAIL_USER/GMAIL_APP_PASSWORD (the same app password works for IMAP)."
-    );
-  }
-
-  const { IMAP_HOST: host, IMAP_PORT: port, IMAP_MAILBOX: mailbox } = env;
-  const days = env.LINKEDIN_ALERT_DAYS;
-  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
-
-  const client = new ImapFlow({
-    host,
-    port,
-    secure: true,
-    auth: { user, pass },
-    logger: false,
-  });
-
+  const since = new Date(Date.now() - env.LINKEDIN_ALERT_DAYS * 24 * 60 * 60 * 1000);
   const out: RawJob[] = [];
   const seen = new Set<string>();
 
-  await client.connect();
-  try {
-    // readOnly so we never mark your mail as read or otherwise mutate the
-    // mailbox - this connector observes, it does not touch your inbox.
-    const lock = await client.getMailboxLock(mailbox, { readOnly: true });
-    try {
-      for await (const msg of client.fetch(
-        { since, from: "linkedin.com" },
-        { source: true }
-      )) {
-        if (!msg.source) continue;
-        const mail = await simpleParser(msg.source);
-        const html =
-          typeof mail.html === "string"
-            ? mail.html
-            : mail.textAsHtml || `<pre>${mail.text || ""}</pre>`;
+  await withMailbox(async (client) => {
+    for await (const msg of client.fetch(
+      { since, from: "linkedin.com" },
+      { source: true }
+    )) {
+      if (!msg.source) continue;
+      const mail = await simpleParser(msg.source);
+      const html =
+        typeof mail.html === "string"
+          ? mail.html
+          : mail.textAsHtml || `<pre>${mail.text || ""}</pre>`;
 
-        for (const p of parseAlertEmail(html)) {
-          if (seen.has(p.id)) continue;
-          seen.add(p.id);
-          out.push({
-            source: "linkedin_alert",
-            sourceId: p.id,
-            title: p.title,
-            company: p.company,
-            // Canonical, tracking-free URL.
-            url: `https://www.linkedin.com/jobs/view/${p.id}/`,
-            // Never an apply-by-email address, so this can never auto-send.
-            applyEmail: undefined,
-            location: p.location,
-            arrangement: p.arrangement,
-            easyApply: p.easyApply,
-            // Derived from the location text, never assumed. undefined means
-            // the email didn't say - scoring treats that as unknown, which is
-            // the honest answer for a digest line like "Dublin, Ireland".
-            remote:
-              p.arrangement === "unknown" ? undefined : p.arrangement === "remote",
-            tags: ["linkedin-alert"],
-            // Alert emails carry no description. ./enrich.ts may fill this in
-            // later from the public job page; until then the job is scored on
-            // its title alone.
-            description: undefined,
-            sparse: true,
-            postedAt: mail.date || undefined,
-          });
-        }
+      for (const p of parseAlertEmail(html)) {
+        if (seen.has(p.id)) continue;
+        seen.add(p.id);
+        out.push({
+          source: "linkedin_alert",
+          sourceId: p.id,
+          title: p.title,
+          company: p.company,
+          // Canonical, tracking-free URL.
+          url: `https://www.linkedin.com/jobs/view/${p.id}/`,
+          // Never an apply-by-email address, so this can never auto-send.
+          applyEmail: undefined,
+          location: p.location,
+          arrangement: p.arrangement,
+          easyApply: p.easyApply,
+          // Derived from the location text, never assumed. undefined means
+          // the email didn't say - scoring treats that as unknown, which is
+          // the honest answer for a digest line like "Dublin, Ireland".
+          remote:
+            p.arrangement === "unknown" ? undefined : p.arrangement === "remote",
+          tags: ["linkedin-alert"],
+          // Alert emails carry no description. ./enrich.ts may fill this in
+          // later from the public job page; until then the job is scored on
+          // its title alone.
+          description: undefined,
+          sparse: true,
+          postedAt: mail.date || undefined,
+        });
       }
-    } finally {
-      lock.release();
     }
-  } finally {
-    await client.logout().catch(() => undefined);
-  }
+  });
 
   return out;
 }

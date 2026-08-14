@@ -19,7 +19,7 @@ import type { GeoEligibility } from "./types";
 // ---------------------------------------------------------------------------
 
 const WORLDWIDE_RE =
-  /\b(worldwide|anywhere|global(?:ly)?|international|any\s+country|no\s+location\s+restriction)\b/i;
+  /\b(worldwide|anywhere|everywhere|global(?:ly)?|international|any\s+country|no\s+location\s+restriction)\b/i;
 
 /**
  * Indian cities that appear in LinkedIn alerts without the country name.
@@ -32,7 +32,7 @@ const WORLDWIDE_RE =
  * that phrase is unambiguous on its own.
  */
 const UNAMBIGUOUS_INDIA_RE =
-  /\b(india|bengaluru|bangalore|mumbai|new\s+delhi|gurgaon|gurugram|noida|pune|chennai|kolkata|ahmedabad|mohali|chandigarh|jaipur|dehradun|indore|coimbatore|nagpur|lucknow|bhopal|vadodara|thiruvananthapuram|mysuru|mysore|jamshedpur|ranchi|kharagpur|tikamgarh|krishnagiri|wayanad|ajmer|rajkot)\b/i;
+  /\b(india|bengaluru|bangalore|mumbai|new\s+delhi|gurgaon|gurugram|noida|pune|chennai|kolkata|ahmedabad|mohali|chandigarh|jaipur|dehradun|indore|coimbatore|nagpur|lucknow|bhopal|vadodara|thiruvananthapuram|mysuru|mysore|jamshedpur|ranchi|kharagpur|tikamgarh|krishnagiri|wayanad|ajmer|rajkot|faridabad)\b/i;
 
 /**
  * City names that are Indian only in the absence of a competing country —
@@ -86,8 +86,14 @@ const RESTRICTED: { token: string; re: RegExp }[] = [
   { token: "anz", re: /\b(australia|new\s+zealand|anz)\b/i },
 ];
 
-// ISO-ish codes inside a multi-region list: "Remote (GB; DE; NL)".
-const REGION_LIST_RE = /\(([^)]*[A-Z]{2}(?:\s*[;,]\s*[A-Z]{2})+[^)]*)\)/;
+// A parenthesised list of ISO-ish country codes: "Remote (GB; DE; NL)", and
+// also the single-code form "Remote (IN)" that Y Combinator emits. The
+// captured group is anchored to the WHOLE parenthetical by the surrounding
+// `\(\s*` and `\s*\)` — without that anchoring, "Bengaluru (Hybrid)" could
+// match "Hy" and be misread as a country code. Codes are uppercase
+// two-letter only, so "(Remote)" and "(Hybrid)" cannot match: their second
+// character is lowercase.
+const REGION_LIST_RE = /\(\s*([A-Z]{2}(?:\s*[;,]\s*[A-Z]{2})*)\s*\)/;
 
 export type GeoFacts = { regions: string[]; eligibility: GeoEligibility };
 
@@ -95,10 +101,12 @@ export type GeoFacts = { regions: string[]; eligibility: GeoEligibility };
  * Precedence matters and is deliberate:
  *   1. worldwide wins outright — "Remote, Worldwide (US timezone overlap)" is
  *      unrestricted, and an incidental "US" must not downgrade it
- *   2. an explicit region list is read for IN before anything else
- *   3. India / APAC -> eligible
- *   4. a named excluding region -> restricted
- *   5. otherwise unknown
+ *   2. an unambiguous India place name outranks a single-code region list —
+ *      see the guard on `list` below
+ *   3. an explicit region list is read for IN before anything else
+ *   4. India / APAC -> eligible
+ *   5. a named excluding region -> restricted
+ *   6. otherwise unknown
  */
 export function deriveGeo(location?: string): GeoFacts {
   const text = (location ?? "").replace(/[\s,]+$/, "").trim();
@@ -108,8 +116,15 @@ export function deriveGeo(location?: string): GeoFacts {
     return { regions: ["worldwide"], eligibility: "worldwide" };
   }
 
-  // "Remote (GB; DE; NL)" — an explicit allow-list of countries.
-  const list = text.match(REGION_LIST_RE)?.[1];
+  // "Remote (GB; DE; NL)" — an explicit allow-list of countries. Skipped when
+  // an unambiguous India place name is already present in the string, e.g.
+  // "Bengaluru (KA)": without this guard, the single two-letter state code in
+  // parentheses (added to read Y Combinator's "Remote (IN)" form) outranks
+  // the unambiguous, unmistakably-India city name it is parenthesised after,
+  // and "Bengaluru (KA)" reads as a restriction to the region-list code "ka"
+  // instead of the city fact it actually states. The city name is the more
+  // specific, unambiguous claim, so it wins.
+  const list = UNAMBIGUOUS_INDIA_RE.test(text) ? undefined : text.match(REGION_LIST_RE)?.[1];
   if (list) {
     const codes = list
       .split(/[;,]/)

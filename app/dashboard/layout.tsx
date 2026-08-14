@@ -63,10 +63,22 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         ,{" "}
         <a href="https://weworkremotely.com" className="hover:text-neutral-400">
           We Work Remotely
-        </a>{" "}
-        and{" "}
+        </a>
+        ,{" "}
         <a href="https://www.adzuna.com" className="hover:text-neutral-400">
           Jobs by Adzuna
+        </a>
+        ,{" "}
+        <a href="https://www.ycombinator.com" className="hover:text-neutral-400">
+          Y Combinator
+        </a>
+        ,{" "}
+        <a href="https://wellfound.com" className="hover:text-neutral-400">
+          Wellfound
+        </a>{" "}
+        and{" "}
+        <a href="https://www.indeed.com" className="hover:text-neutral-400">
+          Indeed
         </a>
         .
       </footer>
