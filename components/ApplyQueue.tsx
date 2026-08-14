@@ -268,10 +268,10 @@ export default function ApplyQueue({ items }: Props) {
                   else rowRefs.current.delete(item.jobId);
                 }}
                 onClick={() => setCursor(i)}
-                className={`cursor-pointer rounded border p-3 transition ${
+                className={`cursor-pointer rounded border border-l-2 p-3 transition ${
                   isCursor
-                    ? "border-(--border-strong) bg-(--surface-hover)"
-                    : "border-(--border) hover:border-(--border-strong)"
+                    ? "border-(--border-strong) border-l-(--text) bg-(--surface-hover)"
+                    : "border-(--border) border-l-(--border) hover:border-(--border-strong)"
                 } ${isApplied ? "opacity-50" : ""}`}
               >
                 <div className="flex items-start justify-between gap-2">
