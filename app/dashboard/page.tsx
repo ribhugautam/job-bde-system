@@ -53,36 +53,34 @@ function Stat({
 }) {
   const body = (
     <>
-      <div className="text-2xl font-semibold">{value}</div>
-      <div className="text-xs text-neutral-400">{label}</div>
+      <div className="tnum text-2xl font-semibold">{value}</div>
+      <div className="text-xs text-(--text-dim)">{label}</div>
     </>
   );
   return href ? (
     <Link
       href={href}
-      className="rounded border border-neutral-800 p-4 transition hover:border-neutral-600"
+      className="rounded border border-(--border) p-4 transition hover:border-(--border-strong)"
     >
       {body}
     </Link>
   ) : (
-    <div className="rounded border border-neutral-800 p-4">{body}</div>
+    <div className="rounded border border-(--border) p-4">{body}</div>
   );
 }
 
 export default async function OverviewPage() {
+  // Data fetch stays in the try; the JSX below is built after it, so a render
+  // error can't be mistaken for a caught DB error. Same pattern as every other
+  // dashboard page (jobs, queue, applications, freelance).
   let data;
-  let dbError: unknown = null;
   try {
     data = await loadStats();
   } catch (err) {
-    // Keep the error object, not just its message: the useful part is in the
-    // cause chain, and stringifying here would throw it away.
-    dbError = err;
+    return <DbErrorNotice error={err} />;
   }
 
-  if (dbError) return <DbErrorNotice error={dbError} />;
-
-  const { jobs, leads, readyPitches, queued, digests } = data!;
+  const { jobs, leads, readyPitches, queued, digests } = data;
   const lastRun = digests[0];
 
   return (
@@ -94,8 +92,16 @@ export default async function OverviewPage() {
         <Stat label="Pitches to review" value={readyPitches} href="/dashboard/freelance" />
       </div>
 
+      <Link
+        href="/dashboard/queue"
+        className="block text-sm text-(--text-muted) hover:text-(--text) hover:underline"
+      >
+        <span className="tnum text-(--text)">{queued}</span> of{" "}
+        <span className="tnum text-(--text)">{jobs}</span> jobs waiting on you
+      </Link>
+
       {lastRun?.budgetExhausted && (
-        <div className="rounded border border-amber-700 bg-amber-950/30 p-3 text-sm text-amber-200">
+        <div className="rounded border border-(--warn-fg) bg-(--warn-bg) p-3 text-sm text-(--warn-fg)">
           The last run hit its time budget with work still queued. Nothing was
           lost — the worker resumes where it left off — but if this keeps
           happening the cron is firing too rarely for the volume. On Vercel Pro,
@@ -106,12 +112,12 @@ export default async function OverviewPage() {
       )}
 
       <div>
-        <h2 className="mb-2 text-sm font-semibold text-neutral-300">
+        <h2 className="mb-2 text-sm font-semibold text-(--text-muted)">
           Recent runs
         </h2>
-        <div className="overflow-x-auto rounded border border-neutral-800">
+        <div className="overflow-x-auto rounded border border-(--border)">
           <table className="w-full text-left text-sm">
-            <thead className="bg-neutral-900 text-neutral-400">
+            <thead className="bg-(--surface) text-(--text-dim)">
               <tr>
                 <th className="p-2">Run at</th>
                 <th className="p-2">Jobs</th>
@@ -131,27 +137,27 @@ export default async function OverviewPage() {
             </thead>
             <tbody>
               {digests.map((d) => (
-                <tr key={d.id} className="border-t border-neutral-800">
+                <tr key={d.id} className="border-t border-(--border)">
                   <td className="p-2 whitespace-nowrap">
                     {d.runAt ? new Date(d.runAt).toLocaleString() : "-"}
                   </td>
-                  <td className="p-2">{d.newJobs}</td>
-                  <td className="p-2">{d.newLeads}</td>
-                  <td className="p-2">{d.duplicatesMerged}</td>
-                  <td className="p-2">{d.jobsEnriched}</td>
-                  <td className="p-2">
+                  <td className="tnum p-2">{d.newJobs}</td>
+                  <td className="tnum p-2">{d.newLeads}</td>
+                  <td className="tnum p-2">{d.duplicatesMerged}</td>
+                  <td className="tnum p-2">{d.jobsEnriched}</td>
+                  <td className="tnum p-2">
                     {(d.applicationsAutoSent ?? 0) + (d.outreachAutoSent ?? 0)}
                   </td>
-                  <td className="p-2">
+                  <td className="tnum p-2">
                     {(d.applicationsQueued ?? 0) + (d.outreachQueued ?? 0)}
                   </td>
-                  <td className="p-2 text-emerald-400">{d.repliesDetected}</td>
-                  <td className="p-2">{d.followUpsSent}</td>
+                  <td className="tnum p-2">{d.repliesDetected}</td>
+                  <td className="tnum p-2">{d.followUpsSent}</td>
                   <td
                     className={
                       (d.errors as string[] | null)?.length
-                        ? "p-2 text-amber-400"
-                        : "p-2 text-neutral-600"
+                        ? "tnum p-2 text-(--warn-fg)"
+                        : "tnum p-2 text-(--text-faint)"
                     }
                   >
                     {(d.errors as string[] | null)?.length || 0}
@@ -160,7 +166,7 @@ export default async function OverviewPage() {
               ))}
               {digests.length === 0 && (
                 <tr>
-                  <td className="p-4 text-neutral-500" colSpan={10}>
+                  <td className="p-4 text-(--text-dim)" colSpan={10}>
                     No runs yet. The cron fires on the schedule in vercel.json,
                     or trigger one manually — see Settings for the exact command
                     (the secret goes in the Authorization header, never a query
@@ -172,14 +178,14 @@ export default async function OverviewPage() {
           </table>
         </div>
         {lastRun?.summary && (
-          <details className="mt-3 rounded border border-neutral-800 p-3">
-            <summary className="cursor-pointer text-xs text-neutral-400">
+          <details className="mt-3 rounded border border-(--border) p-3">
+            <summary className="cursor-pointer text-xs text-(--text-dim)">
               Last run detail
               {(lastRun.errors as string[] | null)?.length
                 ? ` — ${(lastRun.errors as string[]).length} notices`
                 : ""}
             </summary>
-            <pre className="mt-2 overflow-x-auto whitespace-pre-wrap wrap-break-word text-xs leading-relaxed text-neutral-300">
+            <pre className="mt-2 overflow-x-auto whitespace-pre-wrap wrap-break-word text-xs leading-relaxed text-(--text-muted)">
               {lastRun.summary}
             </pre>
           </details>
