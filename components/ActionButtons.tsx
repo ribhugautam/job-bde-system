@@ -9,6 +9,11 @@ import { postJson } from "@/lib/domain/http/postJson";
 // reset their busy flag after the parse, so a non-JSON 500 — what an uncaught
 // exception in the route produces — left them stuck on "Sending..." with no
 // error shown until the page was reloaded.
+//
+// The send buttons carry --ok because they ARE the "yes, do it" control for a
+// deliberate, consequential action. That is the one non-chip use of the token
+// the palette allows; the status selector is a neutral control and stays
+// greyscale, and failures use --danger like every other error in the app.
 
 export function SendApplicationButton({ applicationId }: { applicationId: number }) {
   const router = useRouter();
@@ -32,11 +37,11 @@ export function SendApplicationButton({ applicationId }: { applicationId: number
       <button
         onClick={onClick}
         disabled={loading}
-        className="rounded bg-emerald-700 px-3 py-1 text-xs font-medium text-white hover:bg-emerald-600 disabled:opacity-50"
+        className="rounded bg-(--ok-bg) px-3 py-1 text-xs font-medium text-(--ok-fg) hover:brightness-125 disabled:opacity-50"
       >
         {loading ? "Sending..." : "Approve & Send"}
       </button>
-      {error && <span className="text-xs text-red-400 max-w-xs">{error}</span>}
+      {error && <span className="max-w-xs text-xs text-(--danger-fg)">{error}</span>}
     </div>
   );
 }
@@ -63,11 +68,11 @@ export function SendOutreachButton({ outreachId }: { outreachId: number }) {
       <button
         onClick={onClick}
         disabled={loading}
-        className="rounded bg-emerald-700 px-3 py-1 text-xs font-medium text-white hover:bg-emerald-600 disabled:opacity-50"
+        className="rounded bg-(--ok-bg) px-3 py-1 text-xs font-medium text-(--ok-fg) hover:brightness-125 disabled:opacity-50"
       >
         {loading ? "Sending..." : "Approve & Send"}
       </button>
-      {error && <span className="text-xs text-red-400 max-w-xs">{error}</span>}
+      {error && <span className="max-w-xs text-xs text-(--danger-fg)">{error}</span>}
     </div>
   );
 }
@@ -111,7 +116,7 @@ export function StatusSelect({
         value={value}
         disabled={loading}
         onChange={(e) => onChange(e.target.value)}
-        className="rounded border border-neutral-700 bg-neutral-900 px-2 py-1 text-xs text-neutral-200 disabled:opacity-50"
+        className="rounded border border-(--border-strong) bg-(--neutral-bg) px-2 py-1 text-xs text-(--text) disabled:opacity-50"
       >
         {options.map((o) => (
           <option key={o} value={o}>
