@@ -31,6 +31,22 @@ export const jobs = sqliteTable(
     url: text("url").notNull(), // canonical apply/listing URL
     applyEmail: text("apply_email"), // set only if the listing itself publishes a plain apply-by-email address
     location: text("location"),
+    /**
+     * DEPRECATED — read by nothing. `arrangement` is the source of truth.
+     *
+     * Kept for one phase so this migration stays additive: SQLite cannot alter
+     * a column, and rebuilding a live table on Turso is risk with no benefit.
+     * It is still WRITTEN, and now written honestly — null when the arrangement
+     * is unknown, instead of the `.default(true)` that made all 623 rows in the
+     * database claim to be remote.
+     *
+     * `.default(true)` is left in place (rather than dropped) because dropping
+     * it here made drizzle-kit emit a libSQL `ALTER COLUMN` plus a DROP/CREATE
+     * INDEX pass on every index on this table — not a pure `ADD COLUMN`
+     * migration, and not something to risk against the live table for a
+     * column nothing reads. Ingest (Task 7) always passes an explicit value,
+     * so this default never actually applies going forward.
+     */
     remote: integer("remote", { mode: "boolean" }).default(true),
     salaryText: text("salary_text"),
     tags: text("tags", { mode: "json" }).$type<string[]>().default([]),
@@ -52,6 +68,18 @@ export const jobs = sqliteTable(
     // "merged:<source>". Makes it possible to tell a genuinely empty posting
     // from one enrichment has not reached yet.
     descriptionSource: text("description_source"),
+
+    // --- structured facts (lib/domain/facts) ------------------------------
+    arrangement: text("arrangement"), // remote | hybrid | onsite | unknown
+    geoEligibility: text("geo_eligibility"), // worldwide | eligible | restricted | unknown
+    geoRegions: text("geo_regions", { mode: "json" }).$type<string[]>().default([]),
+    minYears: integer("min_years"),
+    maxYears: integer("max_years"),
+    experienceText: text("experience_text"),
+    easyApply: integer("easy_apply", { mode: "boolean" }),
+    // Which extractor version produced the fields above. backfill-facts.ts
+    // re-derives only rows below the current FACTS_VERSION.
+    factsVersion: integer("facts_version").notNull().default(0),
 
     // --- matching ----------------------------------------------------------
     score: integer("score").default(0), // 0-100 fit score against resume
@@ -85,6 +113,8 @@ export const jobs = sqliteTable(
     // The worker's claim query.
     index("jobs_stage_next_attempt_idx").on(t.stage, t.nextAttemptAt),
     index("jobs_status_idx").on(t.status),
+    index("jobs_facts_idx").on(t.geoEligibility, t.arrangement, t.score),
+    index("jobs_facts_version_idx").on(t.factsVersion),
   ]
 );
 
