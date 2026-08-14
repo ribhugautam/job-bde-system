@@ -3,6 +3,7 @@ import { simpleParser } from "mailparser";
 import * as cheerio from "cheerio";
 import { RawJob } from "../sources/types";
 import { getEnv } from "@/lib/config/env";
+import { deriveArrangement, type WorkArrangement } from "@/lib/domain/facts";
 
 // ---------------------------------------------------------------------------
 // LinkedIn job alerts, read out of your OWN Gmail over IMAP.
@@ -27,8 +28,8 @@ import { getEnv } from "@/lib/config/env";
 //   - There is no apply-by-email address, so these NEVER auto-send. They land
 //     in the dashboard scored, with a drafted cover letter, for you to apply.
 //   - The work arrangement is stated inside the location line ("(Hybrid)",
-//     "(On-site)"), so `remote` is derived from it and left undefined when the
-//     email doesn't say. It is never assumed - see inferRemote().
+//     "(On-site)"), so it is derived from it via deriveArrangement() and left
+//     "unknown" when the email doesn't say. It is never assumed.
 //
 // SETUP:
 //   1. On LinkedIn, run a job search you like -> toggle "Job alert" on ->
@@ -129,28 +130,6 @@ function plausibleField(line?: string): string | undefined {
   return line;
 }
 
-// LinkedIn states the work arrangement inside the location line: "London,
-// England (Hybrid)", "Austin, TX (Remote)", "Sydney, NSW (On-site)".
-const ONSITE_RE = /\b(on[\s-]?site|onsite|hybrid|in[\s-]?office)\b/i;
-const REMOTE_RE = /\b(remote|work from home|wfh|anywhere|distributed)\b/i;
-
-/**
- * Work arrangement from the location text.
- *
- * Deliberately tri-state. This used to be hardcoded `true` for every alert
- * job, which handed a remote bonus in lib/domain/scoring/score.ts to on-site
- * roles and told the reader "remote" about a job in a London office. On-site
- * and hybrid are checked first: hybrid requires office presence, so it is not
- * remote. When the location says nothing either way the answer is `undefined`
- * - unknown, scored as neither a bonus nor a penalty - never a guess.
- */
-export function inferRemote(location?: string): boolean | undefined {
-  if (!location) return undefined;
-  if (ONSITE_RE.test(location)) return false;
-  if (REMOTE_RE.test(location)) return true;
-  return undefined;
-}
-
 // Minimal structural type for a DOM node, so we don't take a direct dependency
 // on domhandler's types just to walk children.
 type DomNode = {
@@ -188,77 +167,255 @@ function lines($: cheerio.CheerioAPI, el: DomNode): string[] {
   return out;
 }
 
+/** LinkedIn separates the title+company half of a card from the location half. */
+const CARD_SEPARATOR = " · ";
+
+/**
+ * Trailing badges LinkedIn appends after the location.
+ *
+ * Anchored to the END of the string and stripped repeatedly, because a card
+ * carries several ("... (On-site) Actively recruiting Easy Apply"). This is the
+ * same enumeration problem as BADGE_LINE_PATTERNS and inherits its caveat: a
+ * new badge wording will not be recognised and will remain glued to the
+ * location, which degrades to a slightly wrong location rather than to a
+ * mangled title.
+ */
+const TRAILING_BADGE_RES: readonly RegExp[] = [
+  /\s+easy apply$/i,
+  /\s+actively recruiting$/i,
+  /\s+actively reviewing applicants$/i,
+  /\s+be an early applicant$/i,
+  /\s+fast growing$/i,
+  /\s+promoted$/i,
+  /\s+reposted$/i,
+  /\s+verified$/i,
+  /\s+viewed$/i,
+  /\s+new$/i,
+  /\s+applied on [a-z]{3}\s+\d{1,2}$/i,
+  /\s+\d+\s+school alumni?$/i,
+  /\s+\d[\d,.]*\+?\s+(connections?|alumni|applicants?|people)$/i,
+  /\s+\d+\s+(minutes?|hours?|days?|weeks?|months?)\s+ago$/i,
+];
+
+const EASY_APPLY_RE = /\beasy apply\b/i;
+
+export type CardParts = {
+  /** Title and company, still joined - see splitCard's note. */
+  head: string;
+  location?: string;
+  arrangement: WorkArrangement;
+  easyApply: boolean;
+};
+
+/**
+ * Splits one card's flattened text into its parts.
+ *
+ * The head is NOT split into title and company here, and cannot be: "SDE II HSV
+ * Digital" has no rule that separates the role from the employer without a
+ * company list. parseAlertEmail resolves the title from the card's own INNER
+ * title anchor when one exists, and otherwise falls back to treating the whole
+ * head as the title. repairMangledCard (Task 10) has no anchor available and so
+ * leaves the head whole too.
+ */
+export function splitCard(raw: string): CardParts {
+  const easyApply = EASY_APPLY_RE.test(raw);
+
+  let text = raw.replace(/\s+/g, " ").trim();
+  // Repeat until stable: a card carries several badges in sequence.
+  for (let pass = 0; pass < TRAILING_BADGE_RES.length; pass++) {
+    const before = text;
+    for (const re of TRAILING_BADGE_RES) text = text.replace(re, "");
+    if (text === before) break;
+  }
+
+  const at = text.indexOf(CARD_SEPARATOR);
+  const head = (at >= 0 ? text.slice(0, at) : text).trim();
+  const location = at >= 0 ? text.slice(at + CARD_SEPARATOR.length).trim() : undefined;
+
+  return {
+    head,
+    location: location || undefined,
+    arrangement: deriveArrangement({ location }),
+    easyApply,
+  };
+}
+
 export type Parsed = {
   id: string;
   title: string;
   company: string;
   location?: string;
-  /** true remote, false on-site/hybrid, undefined when the email doesn't say. */
-  remote?: boolean;
+  arrangement: WorkArrangement;
+  easyApply: boolean;
 };
+
+/** One anchor's flattened text, still tied to the DOM node it came from. */
+type Anchor = { el: unknown; raw: string };
+
+/** The company name from the card's company link, when LinkedIn includes one. */
+function companyLinkFromContainer(
+  $: cheerio.CheerioAPI,
+  container: unknown
+): string | undefined {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const linked = $(container as any)
+    .find('a[href*="linkedin.com/company/"]')
+    .first()
+    .text()
+    .trim();
+  return linked ? linked.replace(/\s+/g, " ") : undefined;
+}
+
+/** Removes `prefix` from the start of `head`, case-insensitively. */
+function subtractPrefix(head: string, prefix: string): string | undefined {
+  if (!prefix) return undefined;
+  const h = head.trim();
+  const p = prefix.trim();
+  if (!h.toLowerCase().startsWith(p.toLowerCase())) return undefined;
+  const rest = h.slice(p.length).trim();
+  return rest || undefined;
+}
+
+/**
+ * Parses a card that is carried by a single usable anchor - either because
+ * LinkedIn only emitted one (this template's title-only anchor, its logo
+ * anchor being empty and its CTA being navigation chrome), or because none of
+ * several anchors for the id contains a CARD_SEPARATOR and so none of them is
+ * "the whole card" - see parseAlertEmail.
+ *
+ * splitCard's head is the title here (no separator to split company off).
+ * Company and location, when they exist at all, live in sibling <div>s
+ * outside the anchor, so they are read positionally off the enclosing
+ * container the same way this module always has.
+ */
+function parseSingleAnchorCard(
+  $: cheerio.CheerioAPI,
+  id: string,
+  anchor: Anchor
+): Parsed {
+  const parts = splitCard(anchor.raw);
+  const title = parts.head;
+  let location = parts.location;
+  let easyApply = parts.easyApply;
+  let company: string | undefined;
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const container = $(anchor.el as any).closest("td, tr, table").get(0);
+  if (container) {
+    const ls = lines($, container as unknown as DomNode);
+    if (ls.some((l) => EASY_APPLY_RE.test(l))) easyApply = true;
+
+    const idx = ls.findIndex((l) => l === anchor.raw);
+    if (idx >= 0) {
+      const after = ls
+        .slice(idx + 1)
+        .filter((l) => !isNavigationText(l) && !isBadgeLine(l));
+      // If the first surviving line still doesn't look like a company, the
+      // positional assumption has broken - stop trusting the positions
+      // entirely rather than reporting chrome as the employer. "Unknown" is
+      // visible in the digest; a wrong company name is not.
+      const candidate = plausibleField(after[0]);
+      if (candidate) {
+        company = candidate;
+        location = location ?? plausibleField(after[1]);
+      }
+    }
+  }
+
+  return {
+    id,
+    title,
+    company: company ?? "Unknown",
+    location,
+    arrangement: deriveArrangement({ location }),
+    easyApply,
+  };
+}
 
 /**
  * Pulls jobs out of one LinkedIn alert email.
  *
  * FRAGILE BY NATURE: LinkedIn changes these templates without notice. The job
- * id and URL come from a regex on the href and are stable; title, company and
- * location are positional heuristics. When the heuristics stop fitting, this
- * degrades to "Unknown"/undefined rather than to a confident wrong value -
- * that is what the badge and chrome filters below are protecting.
+ * id and URL come from a regex on the href and are stable; everything else is
+ * a positional heuristic. When the heuristics stop fitting, this degrades to
+ * "Unknown"/undefined rather than to a confident wrong value - that is what
+ * the badge and chrome filters below are protecting.
  *
- * KNOWN ASSUMPTION, not currently defended: fields are read from the nearest
- * enclosing <td>/<tr>/<table>, which assumes one job per cell. A single-column
- * div layout, or a template that puts the title in its own cell, would either
- * lose company/location or read them from the neighbouring job. Detecting a
- * card boundary properly needs a real example of the broken template, so this
- * is documented instead of guessed at.
+ * LinkedIn's current digest template nests THREE anchors under one job id: a
+ * company-logo anchor (empty text), an OUTER anchor whose text is the WHOLE
+ * flattened card (title, company, location, badges - cheerio does not
+ * auto-close nested <a> tags, so this text really does contain all of it),
+ * and an INNER anchor nested inside the outer one whose text is just the
+ * title. Naively keeping "the longest anchor text" as the title - the
+ * original bug - deterministically picks that outer whole-card string.
+ * Instead: group every anchor by job id first, then read the LONGEST text (it
+ * is the one carrying the CARD_SEPARATOR) as the card, and the SHORTEST as the
+ * title. When only one usable anchor exists for an id - the shape every
+ * fixture in this test file predates this template with - there is no card
+ * vs. title distinction to make, so splitCard's head is used as the title and
+ * company/location are read positionally, exactly as this module always has.
  */
 export function parseAlertEmail(html: string): Parsed[] {
   const $ = cheerio.load(html);
-  const byId = new Map<string, Parsed>();
+  const byId = new Map<string, Anchor[]>();
 
   $("a[href]").each((_i, a) => {
     const href = $(a).attr("href") || "";
     const m = href.match(JOB_URL_RE);
     if (!m) return;
     const id = m[1];
-
-    const text = $(a).text().replace(/\s+/g, " ").trim();
-    if (!text || isNavigationText(text)) return;
-
-    // Prefer the richest anchor text seen for this job id - LinkedIn emits
-    // several links per job (logo, title, CTA) and only one is the title.
-    const existing = byId.get(id);
-    if (existing && existing.title.length >= text.length) return;
-
-    // Company/location: walk up to the enclosing row and read the lines that
-    // follow the title, skipping the badges LinkedIn sprinkles in between.
-    let company = "Unknown";
-    let location: string | undefined;
-    const container = $(a).closest("td, tr, table").get(0);
-    if (container) {
-      const ls = lines($, container as unknown as DomNode);
-      const idx = ls.findIndex((l) => l === text);
-      if (idx >= 0) {
-        const after = ls
-          .slice(idx + 1)
-          .filter((l) => !isNavigationText(l) && !isBadgeLine(l));
-        // If the first surviving line still doesn't look like a company, the
-        // positional assumption has broken - stop trusting the positions
-        // entirely rather than reporting chrome as the employer. "Unknown" is
-        // visible in the digest; a wrong company name is not.
-        const candidate = plausibleField(after[0]);
-        if (candidate) {
-          company = candidate;
-          location = plausibleField(after[1]);
-        }
-      }
-    }
-
-    byId.set(id, { id, title: text, company, location, remote: inferRemote(location) });
+    const raw = $(a).text().replace(/\s+/g, " ").trim();
+    const list = byId.get(id);
+    if (list) list.push({ el: a, raw });
+    else byId.set(id, [{ el: a, raw }]);
   });
 
-  return [...byId.values()];
+  const out: Parsed[] = [];
+
+  for (const [id, anchors] of byId) {
+    const candidates = anchors.filter((c) => c.raw && !isNavigationText(c.raw));
+    if (candidates.length === 0) continue;
+
+    if (candidates.length === 1) {
+      out.push(parseSingleAnchorCard($, id, candidates[0]));
+      continue;
+    }
+
+    const hasJoinedCard = candidates.some((c) => c.raw.includes(CARD_SEPARATOR));
+    if (!hasJoinedCard) {
+      // None of this id's anchors is "the whole card" - the old template
+      // shape, where logo/title/company/CTA are each their own anchor. Keep
+      // the richest text as the title: safe here specifically because this
+      // shape never puts the whole card in one anchor, unlike the nested
+      // template below.
+      const best = candidates.reduce((a, b) => (b.raw.length > a.raw.length ? b : a));
+      out.push(parseSingleAnchorCard($, id, best));
+      continue;
+    }
+
+    const card = candidates.reduce((a, b) => (b.raw.length > a.raw.length ? b : a));
+    const title = candidates.reduce((a, b) => (b.raw.length < a.raw.length ? b : a));
+    const parts = splitCard(card.raw);
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const container = $(card.el as any).closest("tr, table").get(0);
+    const companyLink = container ? companyLinkFromContainer($, container) : undefined;
+    // LinkedIn writes the card as "<Title><Company>" with nothing between
+    // them, so once the (known) title is subtracted off the head, whatever
+    // remains is the company.
+    const company = companyLink ?? subtractPrefix(parts.head, title.raw) ?? "Unknown";
+
+    out.push({
+      id,
+      title: title.raw,
+      company,
+      location: parts.location,
+      arrangement: parts.arrangement,
+      easyApply: parts.easyApply,
+    });
+  }
+
+  return out;
 }
 
 export async function fetchLinkedInAlerts(): Promise<RawJob[]> {
@@ -322,10 +479,13 @@ export async function fetchLinkedInAlerts(): Promise<RawJob[]> {
             // Never an apply-by-email address, so this can never auto-send.
             applyEmail: undefined,
             location: p.location,
+            arrangement: p.arrangement,
+            easyApply: p.easyApply,
             // Derived from the location text, never assumed. undefined means
             // the email didn't say - scoring treats that as unknown, which is
             // the honest answer for a digest line like "Dublin, Ireland".
-            remote: p.remote,
+            remote:
+              p.arrangement === "unknown" ? undefined : p.arrangement === "remote",
             tags: ["linkedin-alert"],
             // Alert emails carry no description. ./enrich.ts may fill this in
             // later from the public job page; until then the job is scored on
