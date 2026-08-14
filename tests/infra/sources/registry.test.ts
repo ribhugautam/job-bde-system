@@ -68,6 +68,7 @@ describe("source names", () => {
       "linkedin_alert",
       "wellfound_alert",
       "indeed_alert",
+      "ycombinator",
     ]);
   });
 
@@ -111,6 +112,7 @@ describe("enabled()", () => {
       "wwr",
       "himalayas",
       "jobicy",
+      "ycombinator",
     ];
     for (const name of unconditional) {
       expect(byName(JOB_SOURCES, name).enabled(), name).toBe(true);
