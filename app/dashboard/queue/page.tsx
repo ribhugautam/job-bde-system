@@ -65,6 +65,10 @@ async function renderQueue() {
         salaryText: job.salaryText,
         coverLetter: app.coverLetter,
         scoreReasons: (job.scoreReasons as string[]) ?? [],
+        arrangement: job.arrangement,
+        geoEligibility: job.geoEligibility,
+        minYears: job.minYears,
+        easyApply: job.easyApply,
       } satisfies QueueItem;
     })
     .filter((x): x is QueueItem => x !== null);
@@ -74,16 +78,16 @@ async function renderQueue() {
   return (
     <div className="space-y-4">
       <div>
-        <h2 className="text-sm font-semibold text-neutral-300">
+        <h2 className="text-sm font-semibold text-(--text-muted)">
           Apply queue — {items.length} ready
         </h2>
-        <p className="mt-1 text-xs text-neutral-500">
+        <p className="mt-1 text-xs text-(--text-dim)">
           Scored, drafted, and waiting on one keystroke. Anything with a
           published apply-by-email address was sent automatically and never
           reaches this list.
         </p>
         {missingDrafts > 0 && (
-          <p className="mt-1 text-xs text-amber-400">
+          <p className="mt-1 text-xs text-(--warn-fg)">
             {missingDrafts} matched{" "}
             {missingDrafts === 1 ? "job is" : "jobs are"} hidden here because no
             cover letter was drafted yet — they are still queued in the pipeline
