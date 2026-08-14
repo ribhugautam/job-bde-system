@@ -19,7 +19,7 @@ import type { GeoEligibility } from "./types";
 // ---------------------------------------------------------------------------
 
 const WORLDWIDE_RE =
-  /\b(worldwide|anywhere|global(?:ly)?|international|any\s+country|no\s+location\s+restriction)\b/i;
+  /\b(worldwide|anywhere|everywhere|global(?:ly)?|international|any\s+country|no\s+location\s+restriction)\b/i;
 
 /**
  * Indian cities that appear in LinkedIn alerts without the country name.
@@ -32,7 +32,7 @@ const WORLDWIDE_RE =
  * that phrase is unambiguous on its own.
  */
 const UNAMBIGUOUS_INDIA_RE =
-  /\b(india|bengaluru|bangalore|mumbai|new\s+delhi|gurgaon|gurugram|noida|pune|chennai|kolkata|ahmedabad|mohali|chandigarh|jaipur|dehradun|indore|coimbatore|nagpur|lucknow|bhopal|vadodara|thiruvananthapuram|mysuru|mysore|jamshedpur|ranchi|kharagpur|tikamgarh|krishnagiri|wayanad|ajmer|rajkot)\b/i;
+  /\b(india|bengaluru|bangalore|mumbai|new\s+delhi|gurgaon|gurugram|noida|pune|chennai|kolkata|ahmedabad|mohali|chandigarh|jaipur|dehradun|indore|coimbatore|nagpur|lucknow|bhopal|vadodara|thiruvananthapuram|mysuru|mysore|jamshedpur|ranchi|kharagpur|tikamgarh|krishnagiri|wayanad|ajmer|rajkot|faridabad)\b/i;
 
 /**
  * City names that are Indian only in the absence of a competing country —
@@ -86,8 +86,14 @@ const RESTRICTED: { token: string; re: RegExp }[] = [
   { token: "anz", re: /\b(australia|new\s+zealand|anz)\b/i },
 ];
 
-// ISO-ish codes inside a multi-region list: "Remote (GB; DE; NL)".
-const REGION_LIST_RE = /\(([^)]*[A-Z]{2}(?:\s*[;,]\s*[A-Z]{2})+[^)]*)\)/;
+// A parenthesised list of ISO-ish country codes: "Remote (GB; DE; NL)", and
+// also the single-code form "Remote (IN)" that Y Combinator emits. The
+// captured group is anchored to the WHOLE parenthetical by the surrounding
+// `\(\s*` and `\s*\)` — without that anchoring, "Bengaluru (Hybrid)" could
+// match "Hy" and be misread as a country code. Codes are uppercase
+// two-letter only, so "(Remote)" and "(Hybrid)" cannot match: their second
+// character is lowercase.
+const REGION_LIST_RE = /\(\s*([A-Z]{2}(?:\s*[;,]\s*[A-Z]{2})*)\s*\)/;
 
 export type GeoFacts = { regions: string[]; eligibility: GeoEligibility };
 
