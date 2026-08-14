@@ -74,3 +74,40 @@ describe("parseIndeedAlert against a real digest", () => {
     expect(remote?.arrangement).toBe("remote");
   });
 });
+
+describe("parseIndeedAlert against a synthetic card", () => {
+  it("keeps a description that opens with a posted-date word, instead of dropping it", () => {
+    // POSTED_RE matches "today" unanchored at the end, so a description that
+    // merely OPENS with "Today ..." would satisfy it if the posted-date check
+    // ran before the description-length check — the same failure shape fixed
+    // for SALARY_RE and an embedded pay figure. No card in the real fixture
+    // happens to start a description this way, so this is a synthetic
+    // regression pin, not a fixture-derived assertion.
+    const html = `
+      <table>
+        <tr>
+          <td class="pb-24">
+            <a href="https://in.indeed.com/rc/clk/dl?jk=abc123def456&from=ja&qd=trackingtoken">
+              <table>
+                <tr><td><h2><a href="https://in.indeed.com/rc/clk/dl?jk=abc123def456&from=ja&qd=trackingtoken">Backend Engineer</a></h2></td></tr>
+                <tr><td><table><tr><td>Acme Corp</td></tr></table></td></tr>
+                <tr><td>Bengaluru, Karnataka</td></tr>
+                <tr><td>Today we are looking for a senior engineer to join our growing team and help build scalable systems for millions of users worldwide.</td></tr>
+                <tr><td>2 days ago</td></tr>
+              </table>
+            </a>
+          </td>
+        </tr>
+      </table>
+    `;
+
+    const [job] = parseIndeedAlert(html);
+    expect(job).toBeDefined();
+    expect(job!.title).toBe("Backend Engineer");
+    expect(job!.company).toBe("Acme Corp");
+    expect(job!.location).toBe("Bengaluru, Karnataka");
+    expect(job!.description).toBe(
+      "Today we are looking for a senior engineer to join our growing team and help build scalable systems for millions of users worldwide."
+    );
+  });
+});
