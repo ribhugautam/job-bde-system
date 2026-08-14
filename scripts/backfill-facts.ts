@@ -14,10 +14,41 @@
 //
 //   npm run db:backfill            (dry run - prints, changes nothing)
 //   npm run db:backfill -- --write
-import { eq, lt, or, isNull } from "drizzle-orm";
+//
+// --requeue-enrich (opt-in, separate from the above):
+//
+//   The repair above moves every affected row to stage "score" directly, since
+//   that is the correct next step for RE-SCORING it. But the stage machine
+//   (JOB_STAGES in lib/pipeline/state.ts) is forward-only and nothing else ever
+//   resets a row back to "enrich" - so a repaired row's company stays the
+//   "Unknown" placeholder the old alert parser wrote FOREVER, even though
+//   lib/infra/linkedin/enrich.ts can now recover it from the job's public page.
+//   This flag is the one-time, explicit opt-in that gives those rows their
+//   first (and only) shot at that recovery, by moving them back to "enrich".
+//
+//   Eligibility is deliberately narrow and re-run-safe:
+//     - source = 'linkedin_alert' and company = 'Unknown' (nothing else is
+//       missing a company because of this bug).
+//     - status is 'found' or 'rejected' - a row the operator has already acted
+//       on (matched, ready_for_review, applied, sent, responded, interview,
+//       offer) is never requeued.
+//     - the row's LinkedIn id has NO row yet in linkedin_enrich_cache. That is
+//       what makes a second run safe: once a row has been through "enrich"
+//       once - live fetch or cache hit, recovered a company or not - a cache
+//       row exists for its id and it is never selected again. Without this
+//       check a permanently-blocked (403/429) listing would be requeued and
+//       re-fetched forever.
+//
+//   Same dry-run default as the rest of the script: prints the count, changes
+//   nothing without --write.
+//
+//   npm run db:backfill -- --requeue-enrich             (dry run)
+//   npm run db:backfill -- --requeue-enrich --write
+import { eq, lt, or, isNull, and, inArray } from "drizzle-orm";
 import { resolveDbTarget } from "./db-target";
 import { deriveJobFacts, FACTS_VERSION } from "../lib/domain/facts";
 import { repairMangledCard } from "../lib/infra/linkedin/alerts";
+import { extractJobId } from "../lib/infra/linkedin/enrich";
 import { scoreJob } from "../lib/domain/scoring/score";
 import type { RawJob } from "../lib/domain/types";
 
@@ -31,6 +62,68 @@ import type { RawJob } from "../lib/domain/types";
 import { getDb, schema } from "../lib/infra/db/client";
 
 const WRITE = process.argv.includes("--write");
+const REQUEUE_ENRICH = process.argv.includes("--requeue-enrich");
+
+/**
+ * Moves eligible linkedin_alert/Unknown-company rows back to stage "enrich" -
+ * see the header comment above for why this is needed and why the
+ * "no cache row yet" check is what keeps it re-run-safe.
+ */
+async function requeueEnrich(db: ReturnType<typeof getDb>, write: boolean) {
+  const candidates = await db
+    .select()
+    .from(schema.jobs)
+    .where(
+      and(
+        eq(schema.jobs.source, "linkedin_alert"),
+        eq(schema.jobs.company, "Unknown"),
+        or(eq(schema.jobs.status, "found"), eq(schema.jobs.status, "rejected"))
+      )
+    );
+
+  const linkedinIdByJobId = new Map<number, string>();
+  for (const row of candidates) {
+    const linkedinId = extractJobId(row.url);
+    // A row whose URL cannot be resolved to a LinkedIn id has nothing to
+    // enrich against and could never build a cache row to stop it being
+    // picked up again - never requeue it.
+    if (linkedinId) linkedinIdByJobId.set(row.id, linkedinId);
+  }
+
+  const linkedinIds = [...new Set(linkedinIdByJobId.values())];
+  const alreadyFetched = new Set(
+    linkedinIds.length
+      ? (
+          await db
+            .select({ jobId: schema.linkedinEnrichCache.jobId })
+            .from(schema.linkedinEnrichCache)
+            .where(inArray(schema.linkedinEnrichCache.jobId, linkedinIds))
+        ).map((r) => r.jobId)
+      : []
+  );
+
+  const toRequeue = candidates.filter((row) => {
+    const linkedinId = linkedinIdByJobId.get(row.id);
+    return linkedinId !== undefined && !alreadyFetched.has(linkedinId);
+  });
+
+  console.log(`requeued ${toRequeue.length} linkedin_alert rows to stage=enrich`);
+
+  if (write) {
+    for (const row of toRequeue) {
+      await db
+        .update(schema.jobs)
+        .set({
+          stage: "enrich",
+          attempts: 0,
+          lastError: null,
+          nextAttemptAt: null,
+          updatedAt: new Date(),
+        })
+        .where(eq(schema.jobs.id, row.id));
+    }
+  }
+}
 
 function tally<T extends string>(values: T[]): Record<string, number> {
   const out: Record<string, number> = {};
@@ -147,6 +240,9 @@ async function main() {
   console.log(`re-scored ${rescored} rows`);
   console.log("AFTER arrangement:", tally(after));
   console.log("AFTER geo:", tally(geoAfter));
+
+  if (REQUEUE_ENRICH) await requeueEnrich(db, WRITE);
+
   if (!WRITE) console.log("\nDRY RUN - nothing written. Re-run with --write to apply.");
 }
 

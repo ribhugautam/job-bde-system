@@ -104,11 +104,18 @@ export async function runEnrich(ctx: StageContext): Promise<StageResult> {
 
       const cached = cache.get(linkedinId);
       if (cached) {
+        // Same guard as the live-fetch path below: a cached company is only
+        // ever offered when the stored company is still the "Unknown"
+        // placeholder. A cache hit must not overwrite a company a source
+        // stated correctly, exactly like a live fetch must not.
+        const recoveredCompany =
+          cached.company && job.company === "Unknown" ? cached.company : undefined;
         await advance(
           ctx,
           job.id,
           cached.outcome === "ok" ? cached.description ?? undefined : undefined,
-          cached.outcome === "ok" ? "linkedin_public" : undefined
+          cached.outcome === "ok" ? "linkedin_public" : undefined,
+          recoveredCompany
         );
         if (cached.outcome === "ok" && cached.description) {
           ctx.counters.jobsEnriched++;
