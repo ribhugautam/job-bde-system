@@ -51,27 +51,27 @@ const OTHER_COUNTRY_TOKENS =
   "pakistan|japan|thailand|indonesia|philippines|usa?|u\\.s\\.a?\\.?|united\\s+states|america|americas|canada|uk|united\\s+kingdom|england|scotland|wales|europe|european|eu|emea|eea|latam|latin\\s+america|south\\s+america|australia|new\\s+zealand|anz";
 
 /**
- * Anchored end to end: matches only when an entire (trimmed, parenthetical-
- * stripped) location component IS a country name, e.g. the "Pakistan" in
- * "Hyderabad, Pakistan". An unanchored match would also fire on "US" inside
- * "Hyderabad-based team serving US clients", which is incidental prose, not
- * a stated restriction — the same hazard WORLDWIDE_RE already guards against
- * for "Remote, Worldwide (US timezone overlap)".
+ * Anchored end to end: matches only when an entire (trimmed) location
+ * component IS a country name, e.g. the "Pakistan" in "Hyderabad, Pakistan".
+ * An unanchored match would also fire on "US" inside "Hyderabad-based team
+ * serving US clients", which is incidental prose, not a stated restriction —
+ * the same hazard WORLDWIDE_RE already guards against for "Remote, Worldwide
+ * (US timezone overlap)".
  */
 const OTHER_COUNTRY_ANCHORED_RE = new RegExp(`^(?:${OTHER_COUNTRY_TOKENS})$`, "i");
 
 /**
  * True when `text` names another country as its own location component
- * (split on `,` `/` `;`) rather than mentioning one in passing.
+ * rather than mentioning one in passing. Splits on `,` `/` `;` AND on `(`
+ * `)` — parentheses are a separator, not something to strip, so "Canada
+ * (Remote)" and "Hyderabad (Pakistan)" both isolate their country name into
+ * its own component, while "Hyderabad (On-site)" isolates "On-site", which
+ * is not one.
  */
 function namesAnotherCountry(text: string): boolean {
-  return text.split(/[,/;]/).some((component) => {
-    const trimmed = component
-      .trim()
-      .replace(/\s*\([^)]*\)?\s*$/, "")
-      .trim();
-    return OTHER_COUNTRY_ANCHORED_RE.test(trimmed);
-  });
+  return text
+    .split(/[,/;()]/)
+    .some((component) => OTHER_COUNTRY_ANCHORED_RE.test(component.trim()));
 }
 
 const APAC_RE = /\b(apac|asia[\s-]?pacific|asia)\b/i;

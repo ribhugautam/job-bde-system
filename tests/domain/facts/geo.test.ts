@@ -113,4 +113,38 @@ describe("deriveGeo", () => {
     expect(deriveGeo("India / United States").eligibility).toBe("eligible");
     expect(deriveGeo("Remote (IN; US)").eligibility).toBe("eligible");
   });
+
+  it("vetoes a country stated parenthetically right after the ambiguous city", () => {
+    // Parentheses are a separator, not something to strip: "Hyderabad
+    // (Pakistan)" must isolate "Pakistan" into its own component just like
+    // "Hyderabad, Pakistan" does, even though there is no comma before the
+    // paren. A prior fix stripped trailing parentheticals instead, which
+    // discarded "(Pakistan)" outright and let this slip through as eligible.
+    expect(deriveGeo("Hyderabad (Pakistan)")).toEqual({ regions: [], eligibility: "unknown" });
+    expect(deriveGeo("Delhi (Canada)").eligibility).toBe("restricted");
+    expect(deriveGeo("Delhi (Ontario, Canada)").eligibility).toBe("restricted");
+    expect(deriveGeo("Delhi, (Canada)").eligibility).toBe("restricted");
+    expect(deriveGeo("Delhi, Canada)").eligibility).toBe("restricted");
+    expect(deriveGeo("Canada (Remote)").eligibility).toBe("restricted");
+  });
+
+  it("vetoes an ambiguous city against a competing country in more component shapes", () => {
+    expect(deriveGeo("Delhi / Canada").eligibility).toBe("restricted");
+    expect(deriveGeo("Delhi; Japan")).toEqual({ regions: [], eligibility: "unknown" });
+    expect(deriveGeo("Delhi, United States").eligibility).toBe("restricted");
+    expect(deriveGeo("Delhi, New Zealand").eligibility).toBe("restricted");
+    expect(deriveGeo("USA, Delhi").eligibility).toBe("restricted");
+    expect(deriveGeo("Delhi , Canada ").eligibility).toBe("restricted");
+    expect(deriveGeo("Delhi, CANADA").eligibility).toBe("restricted");
+  });
+
+  it("does not veto when the trailing country component is not an exact match", () => {
+    expect(deriveGeo("Delhi, Canada extra").eligibility).toBe("eligible");
+  });
+
+  it("recognises Indian cities with a parenthetical arrangement note", () => {
+    // Real production location values.
+    expect(deriveGeo("Mohali district (On-site)").eligibility).toBe("eligible");
+    expect(deriveGeo("Pune Division (Hybrid)").eligibility).toBe("eligible");
+  });
 });
