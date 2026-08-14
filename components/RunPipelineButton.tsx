@@ -101,6 +101,12 @@ export default function RunPipelineButton({ dryRun }: { dryRun: boolean }) {
       <span className="hidden text-[10px] text-(--text-dim) sm:inline">
         {dryRun ? "dry run — no email" : "live — sends email"}
       </span>
+      {/*
+        LIVE is red, not green. Green is the takeable/good token, and this is
+        the control that sends real applications to real employers — Settings
+        already paints the same fact with --danger-*, and one fact must not
+        carry opposite meanings two pages apart. Amber stays "drafts only".
+      */}
       <button
         onClick={run}
         disabled={running}
@@ -114,7 +120,7 @@ export default function RunPipelineButton({ dryRun }: { dryRun: boolean }) {
             ? "cursor-not-allowed bg-(--surface) text-(--text-faint)"
             : dryRun
               ? "bg-(--warn-bg) text-(--warn-fg) hover:brightness-125"
-              : "bg-(--ok-bg) text-(--ok-fg) hover:brightness-125"
+              : "bg-(--danger-bg) text-(--danger-fg) hover:brightness-125"
         }`}
       >
         {running ? "Running…" : dryRun ? "Run (dry)" : "Run pipeline"}
