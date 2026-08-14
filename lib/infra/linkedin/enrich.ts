@@ -33,6 +33,8 @@ export type EnrichOutcome = "ok" | "not_found" | "blocked" | "error";
 export type EnrichResult = {
   jobId: string;
   description?: string;
+  /** hiringOrganization.name from the page's JSON-LD, when it publishes one. */
+  company?: string;
   outcome: EnrichOutcome;
   httpStatus?: number;
 };
@@ -137,7 +139,18 @@ function collectNodes(value: unknown, out: unknown[]): void {
   if (graph) collectNodes(graph, out);
 }
 
-function jsonLdDescription($: cheerio.CheerioAPI): string | undefined {
+type JsonLdFacts = { description?: string; company?: string };
+
+/**
+ * Reads the description AND the hiring organisation from the page's JSON-LD.
+ *
+ * Both come off the same JobPosting node, so reading them together costs
+ * nothing extra. The company matters because LinkedIn alert emails parsed by
+ * the OLD parser stored "Unknown" — see repairMangledCard in ./alerts.ts, which
+ * can recover a mangled card's location and arrangement from stored text but
+ * provably cannot recover its employer.
+ */
+function jsonLdFacts($: cheerio.CheerioAPI): JsonLdFacts {
   for (const script of $('script[type="application/ld+json"]').toArray()) {
     const raw = $(script).text().trim();
     if (!raw) continue;
@@ -152,49 +165,65 @@ function jsonLdDescription($: cheerio.CheerioAPI): string | undefined {
     collectNodes(data, nodes);
     for (const node of nodes) {
       if (!isJobPosting(node)) continue;
+
+      const org = (node as { hiringOrganization?: unknown }).hiringOrganization;
+      const name =
+        org && typeof org === "object"
+          ? (org as { name?: unknown }).name
+          : undefined;
+      const company =
+        typeof name === "string" && name.trim() ? name.trim() : undefined;
+
       const description = node.description;
       if (typeof description === "string" && description.trim()) {
-        return description;
+        return { description, company };
       }
+      // A node with a company but no description is still worth reporting:
+      // the caller records not_found for the description and keeps the name.
+      if (company) return { description: undefined, company };
     }
   }
-  return undefined;
+  return {};
 }
 
+export type ParsedJobPage = { description?: string; company?: string };
+
 /**
- * Extracts the job description from a job page.
+ * Extracts the job description and hiring organisation from a job page.
  *
  * Prefers the JSON-LD JobPosting block: it is a published, structured contract
  * that changes far less often than LinkedIn's CSS class names. The class-name
- * selectors are only a fallback for pages that ship without it.
+ * selectors are only a fallback for pages that ship without it, and they carry
+ * no company name — a page that falls through to them yields a description
+ * alone.
  *
- * Returns undefined when the page carries no description at all (a removed
- * listing, or a page that wants a login) rather than guessing.
+ * Returns undefined fields when the page carries neither (a removed listing, or
+ * a page that wants a login) rather than guessing.
  */
-export function parseJobPage(html: string): string | undefined {
-  if (!html || !html.trim()) return undefined;
+export function parseJobPage(html: string): ParsedJobPage {
+  if (!html || !html.trim()) return { description: undefined, company: undefined };
 
   let $: cheerio.CheerioAPI;
   try {
     $ = cheerio.load(html);
   } catch {
-    return undefined;
+    return { description: undefined, company: undefined };
   }
 
-  const fromJsonLd = jsonLdDescription($);
-  if (fromJsonLd) {
-    const text = toReadableText(fromJsonLd);
-    if (text) return text;
+  const fromJsonLd = jsonLdFacts($);
+  if (fromJsonLd.description) {
+    const text = toReadableText(fromJsonLd.description);
+    if (text) return { description: text, company: fromJsonLd.company };
   }
 
   for (const selector of DESCRIPTION_SELECTORS) {
     const el = $(selector).first();
     if (!el.length) continue;
     const text = toReadableText(el.html() ?? "");
-    if (text) return text;
+    if (text) return { description: text, company: fromJsonLd.company };
   }
 
-  return undefined;
+  return { description: undefined, company: fromJsonLd.company };
 }
 
 /**
@@ -233,14 +262,15 @@ export async function fetchJobDescription(jobId: string): Promise<EnrichResult> 
       return { jobId, outcome: "error", httpStatus };
     }
 
-    const description = parseJobPage(await res.text());
+    const { description, company } = parseJobPage(await res.text());
     if (!description) {
       // 200 but nothing readable: an expired listing or an auth wall. Saying
-      // "not_found" is honest; the job stays title-only either way.
-      return { jobId, outcome: "not_found", httpStatus };
+      // "not_found" is honest; the job stays title-only either way. The company
+      // still rides along — it is useful even when the description is not there.
+      return { jobId, company, outcome: "not_found", httpStatus };
     }
 
-    return { jobId, description, outcome: "ok", httpStatus };
+    return { jobId, description, company, outcome: "ok", httpStatus };
   } catch {
     return { jobId, outcome: "error" };
   }

@@ -287,6 +287,7 @@ export const documents = sqliteTable("documents", {
 export const linkedinEnrichCache = sqliteTable("linkedin_enrich_cache", {
   jobId: text("job_id").primaryKey(), // the numeric id from /jobs/view/{id}
   description: text("description"),
+  company: text("company"),
   outcome: text("outcome").notNull(), // "ok" | "not_found" | "blocked" | "error"
   httpStatus: integer("http_status"),
   fetchedAt: integer("fetched_at", { mode: "timestamp" }).default(

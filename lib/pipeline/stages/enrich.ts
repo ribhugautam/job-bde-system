@@ -144,19 +144,27 @@ export async function runEnrich(ctx: StageContext): Promise<StageResult> {
         .values({
           jobId: linkedinId,
           description: result.description,
+          company: result.company,
           outcome: result.outcome,
           httpStatus: result.httpStatus,
           fetchedAt: new Date(),
         })
         .onConflictDoNothing();
 
+      // Only offered when the stored company is the "Unknown" placeholder the
+      // old alert parser wrote. A company a source stated correctly is never
+      // overwritten by a scraped one.
+      const recoveredCompany =
+        result.company && job.company === "Unknown" ? result.company : undefined;
+
       if (result.outcome === "ok" && result.description) {
         ctx.counters.jobsEnriched++;
-        await advance(ctx, job.id, result.description, "linkedin_public");
+        await advance(ctx, job.id, result.description, "linkedin_public", recoveredCompany);
       } else {
         // Blocked, gone, or broken. Score it on the title and carry on; this is
         // a degraded result, not a failure worth retrying against a backoff.
-        await advance(ctx, job.id, undefined, undefined);
+        // A company may still have been recovered even with no description.
+        await advance(ctx, job.id, undefined, undefined, recoveredCompany);
       }
       processed++;
     } catch (err) {
@@ -171,12 +179,14 @@ async function advance(
   ctx: StageContext,
   jobId: number,
   description: string | undefined,
-  descriptionSource: string | undefined
+  descriptionSource: string | undefined,
+  company?: string
 ) {
   await ctx.db
     .update(schema.jobs)
     .set({
       ...(description ? { description, descriptionSource } : {}),
+      ...(company ? { company } : {}),
       stage: "score",
       attempts: 0,
       lastError: null,
