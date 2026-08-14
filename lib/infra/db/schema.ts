@@ -31,6 +31,33 @@ export const jobs = sqliteTable(
     url: text("url").notNull(), // canonical apply/listing URL
     applyEmail: text("apply_email"), // set only if the listing itself publishes a plain apply-by-email address
     location: text("location"),
+    /**
+     * NOT dead: `arrangement` is the source of truth for where a job is
+     * worked from, but this column is still read in four places, so it
+     * cannot simply be dropped. `lib/pipeline/stages/draft.ts` reads it
+     * (`job.remote ?? undefined`, though nothing downstream in
+     * `lib/domain/drafting/` currently consumes the field). `score.ts` reads
+     * it. `scripts/reconcile-schema.ts` reads it to feed `fingerprintJob`.
+     * `scripts/backfill-facts.ts` reads it to feed `deriveJobFacts`, where it
+     * can decide `arrangement` when location and tags are both silent. Any
+     * change here has to check all four call sites first.
+     *
+     * `.default(true)` is still present today, deliberately, not an oversight.
+     * Dropping it was tried: it made drizzle-kit emit a libSQL `ALTER COLUMN`
+     * plus a DROP/CREATE pass on all 16 indexes across four tables, instead of
+     * a pure `ADD COLUMN` migration — a rebuild-shaped change this plan will
+     * not risk against a live table holding 623 real rows for a column most
+     * callers now only fall back to. So the default stayed, and the migration
+     * that added `arrangement` and the rest of the structured-facts columns
+     * stayed additive-only.
+     *
+     * Because the default is still live, any insert path that omits `remote`
+     * will silently persist `true`. Every insert MUST pass an explicit value
+     * for this column, including an explicit `null` when the arrangement is
+     * unknown — that discipline, not this schema, is what actually stops the
+     * bug this plan exists to eliminate (all 623 rows claiming remote). That
+     * guarantee is carried by the insert paths (Task 7), not by this column.
+     */
     remote: integer("remote", { mode: "boolean" }).default(true),
     salaryText: text("salary_text"),
     tags: text("tags", { mode: "json" }).$type<string[]>().default([]),
@@ -52,6 +79,18 @@ export const jobs = sqliteTable(
     // "merged:<source>". Makes it possible to tell a genuinely empty posting
     // from one enrichment has not reached yet.
     descriptionSource: text("description_source"),
+
+    // --- structured facts (lib/domain/facts) ------------------------------
+    arrangement: text("arrangement"), // remote | hybrid | onsite | unknown
+    geoEligibility: text("geo_eligibility"), // worldwide | eligible | restricted | unknown
+    geoRegions: text("geo_regions", { mode: "json" }).$type<string[]>().default([]),
+    minYears: integer("min_years"),
+    maxYears: integer("max_years"),
+    experienceText: text("experience_text"),
+    easyApply: integer("easy_apply", { mode: "boolean" }),
+    // Which extractor version produced the fields above. backfill-facts.ts
+    // re-derives only rows below the current FACTS_VERSION.
+    factsVersion: integer("facts_version").notNull().default(0),
 
     // --- matching ----------------------------------------------------------
     score: integer("score").default(0), // 0-100 fit score against resume
@@ -85,6 +124,8 @@ export const jobs = sqliteTable(
     // The worker's claim query.
     index("jobs_stage_next_attempt_idx").on(t.stage, t.nextAttemptAt),
     index("jobs_status_idx").on(t.status),
+    index("jobs_facts_idx").on(t.geoEligibility, t.arrangement, t.score),
+    index("jobs_facts_version_idx").on(t.factsVersion),
   ]
 );
 
@@ -253,6 +294,7 @@ export const documents = sqliteTable("documents", {
 export const linkedinEnrichCache = sqliteTable("linkedin_enrich_cache", {
   jobId: text("job_id").primaryKey(), // the numeric id from /jobs/view/{id}
   description: text("description"),
+  company: text("company"),
   outcome: text("outcome").notNull(), // "ok" | "not_found" | "blocked" | "error"
   httpStatus: integer("http_status"),
   fetchedAt: integer("fetched_at", { mode: "timestamp" }).default(

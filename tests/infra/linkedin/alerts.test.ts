@@ -3,11 +3,11 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import * as cheerio from "cheerio";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { deriveArrangement } from "@/lib/domain/facts";
 import { getEnv, resetEnvCache } from "@/lib/config/env";
 import {
   BADGE_LINE_PATTERNS,
   fetchLinkedInAlerts,
-  inferRemote,
   isNavigationText,
   parseAlertEmail,
 } from "@/lib/infra/linkedin/alerts";
@@ -88,14 +88,16 @@ describe("parseAlertEmail - multi-job digest", () => {
       title: "Senior Full Stack Engineer",
       company: "Vercel",
       location: "Remote, Worldwide",
-      remote: true,
+      arrangement: "remote",
+      easyApply: false,
     });
     expect(jobs[2]).toEqual({
       id: "3745559001",
       title: "Full Stack Developer (Next.js)",
       company: "Supabase",
       location: "Remote",
-      remote: true,
+      arrangement: "remote",
+      easyApply: false,
     });
   });
 
@@ -104,7 +106,7 @@ describe("parseAlertEmail - multi-job digest", () => {
     expect(jobs[1].company).toBe("Linear");
     expect(jobs[1].location).toBe("London, England, United Kingdom (Hybrid)");
     // Hybrid is not remote, whatever the source is called.
-    expect(jobs[1].remote).toBe(false);
+    expect(jobs[1].arrangement).toBe("hybrid");
   });
 
   it("never returns navigation chrome as a job", () => {
@@ -338,29 +340,30 @@ describe("isNavigationText", () => {
 // remote bonus to on-site roles and told the reader "remote" about a job in a
 // London office. It is now derived, and undefined when the email is silent.
 // ---------------------------------------------------------------------------
-describe("inferRemote", () => {
-  it("is true only when the location says so", () => {
-    expect(inferRemote("Remote, Worldwide")).toBe(true);
-    expect(inferRemote("Remote")).toBe(true);
-    expect(inferRemote("Austin, TX (Remote)")).toBe(true);
-    expect(inferRemote("Remote - United States")).toBe(true);
-    expect(inferRemote("Anywhere")).toBe(true);
+describe("deriveArrangement on LinkedIn location lines", () => {
+  const at = (location?: string) => deriveArrangement({ location });
+
+  it("reads remote", () => {
+    expect(at("Remote, Worldwide")).toBe("remote");
+    expect(at("Remote")).toBe("remote");
+    expect(at("Austin, TX (Remote)")).toBe("remote");
+    expect(at("Remote - United States")).toBe("remote");
+    expect(at("Anywhere")).toBe("remote");
   });
 
-  it("is false for explicit on-site and hybrid arrangements", () => {
-    expect(inferRemote("Sydney, NSW (On-site)")).toBe(false);
-    expect(inferRemote("Sydney, NSW (Onsite)")).toBe(false);
-    expect(inferRemote("London, England, United Kingdom (Hybrid)")).toBe(false);
-    expect(inferRemote("Seattle, WA (Hybrid)")).toBe(false);
-    // Hybrid wins over the word "remote": it still requires office presence.
-    expect(inferRemote("Hybrid remote - Berlin")).toBe(false);
+  it("distinguishes on-site from hybrid instead of collapsing both to 'not remote'", () => {
+    expect(at("Sydney, NSW (On-site)")).toBe("onsite");
+    expect(at("Sydney, NSW (Onsite)")).toBe("onsite");
+    expect(at("London, England, United Kingdom (Hybrid)")).toBe("hybrid");
+    expect(at("Seattle, WA (Hybrid)")).toBe("hybrid");
+    expect(at("Hybrid remote - Berlin")).toBe("hybrid");
   });
 
-  it("is undefined - not a guess - when the location says nothing", () => {
-    expect(inferRemote("Dublin, Ireland")).toBeUndefined();
-    expect(inferRemote("London, England, United Kingdom")).toBeUndefined();
-    expect(inferRemote("")).toBeUndefined();
-    expect(inferRemote(undefined)).toBeUndefined();
+  it("is unknown when the line says nothing either way", () => {
+    expect(at("Dublin, Ireland")).toBe("unknown");
+    expect(at("London, England, United Kingdom")).toBe("unknown");
+    expect(at("")).toBe("unknown");
+    expect(at(undefined)).toBe("unknown");
   });
 });
 
@@ -368,19 +371,19 @@ describe("parseAlertEmail - work arrangement per job", () => {
   const jobs = parseAlertEmail(fixture("trapped-titles.html"));
 
   it("reports remote, on-site/hybrid and unstated distinctly", () => {
-    expect(jobs.map((j) => [j.location, j.remote])).toEqual([
-      ["Remote - United States", true],
-      ["Sydney, NSW (On-site)", false],
-      ["Seattle, WA (Hybrid)", false],
-      ["Dublin, Ireland", undefined],
-      ["Remote, Worldwide", true],
-      ["London, England, United Kingdom (Hybrid)", false],
+    expect(jobs.map((j) => [j.location, j.arrangement])).toEqual([
+      ["Remote - United States", "remote"],
+      ["Sydney, NSW (On-site)", "onsite"],
+      ["Seattle, WA (Hybrid)", "hybrid"],
+      ["Dublin, Ireland", "unknown"],
+      ["Remote, Worldwide", "remote"],
+      ["London, England, United Kingdom (Hybrid)", "hybrid"],
     ]);
   });
 
   it("never hardcodes remote for the whole source", () => {
     // The old bug: every LinkedIn alert job claimed to be remote.
-    expect(jobs.every((j) => j.remote === true)).toBe(false);
+    expect(jobs.every((j) => j.arrangement === "remote")).toBe(false);
   });
 });
 
@@ -399,7 +402,9 @@ describe("parseAlertEmail - badge lines between title and company", () => {
       title: "Senior Full Stack Engineer",
       company: "Vercel",
       location: "Remote, Worldwide",
-      remote: true,
+      arrangement: "remote",
+      // Card 1's badges include "Easy Apply".
+      easyApply: true,
     });
   });
 
@@ -419,7 +424,7 @@ describe("parseAlertEmail - badge lines between title and company", () => {
     expect(jobs[1].title).toBe("Staff Backend Engineer");
     expect(jobs[1].company).toBe("Unknown");
     expect(jobs[1].location).toBeUndefined();
-    expect(jobs[1].remote).toBeUndefined();
+    expect(jobs[1].arrangement).toBe("unknown");
   });
 
   it("exposes the badge list as an admittedly incomplete constant", () => {
@@ -460,5 +465,88 @@ describe("parseAlertEmail - deeply nested title markup", () => {
   it("still reads the fields that follow the title", () => {
     expect(job.company).toBe("Cloudflare");
     expect(job.location).toBe("Austin, TX (Remote)");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// FIX 4 (Task 9): the real digest template nests THREE anchors per job id -
+// company logo, an outer anchor whose text is the WHOLE card, and an inner
+// anchor whose text is just the title. Every stored linkedin_alert row was
+// corrupt because the old dedup kept the longest anchor text, which is always
+// the outer whole-card string: title "became" "Web Fullstack Developer - CX
+// Michelin · Pune Division (Hybrid) Actively recruiting", company stayed
+// "Unknown", location was null. This fixture is a real captured alert email
+// (see tests/fixtures/linkedin-alert.html and task-1-report.md) exercising
+// that exact shape.
+// ---------------------------------------------------------------------------
+describe("parseAlertEmail against a real alert email", () => {
+  const html = readFileSync("tests/fixtures/linkedin-alert.html", "utf8");
+  const jobs = parseAlertEmail(html);
+
+  it("finds several jobs", () => {
+    expect(jobs.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("never returns a title containing the separator or a badge", () => {
+    // The exact failure in production: the whole card became the title.
+    for (const job of jobs) {
+      expect(job.title).not.toContain("·");
+      expect(job.title).not.toMatch(/easy apply|actively recruiting|applied on/i);
+      expect(job.title.length).toBeLessThan(120);
+    }
+  });
+
+  it("resolves a real company for most cards", () => {
+    const known = jobs.filter((j) => j.company !== "Unknown");
+    expect(known.length).toBeGreaterThan(jobs.length / 2);
+  });
+
+  it("classifies every card's arrangement", () => {
+    for (const job of jobs) {
+      expect(["remote", "hybrid", "onsite", "unknown"]).toContain(job.arrangement);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// KNOWN GAP (fix round 1 of Task 9): a nested-anchor card - the real,
+// captured shape, not a synthetic one - that has no "Company · Location"
+// paragraph at all carries no CARD_SEPARATOR in either of its candidate
+// anchors, so parseAlertEmail's discriminator cannot distinguish it from the
+// older, unconfirmed template shape (see parseSingleAnchorCard's comment) and
+// routes it through that fallback. The fallback then keeps the richest
+// surviving text - here, the OUTER anchor, unstripped - as the title. If that
+// text carries a trailing token TRAILING_BADGE_RES does not enumerate (a
+// salary range, in this fixture), the token stays glued to the title: a
+// narrower replay of the original whole-card-as-title bug.
+//
+// This is PINNED, not closed, on purpose. Closing it would mean either (a)
+// changing the CARD_SEPARATOR-presence discriminator itself - explicitly out
+// of scope, since anchor selection was reviewed and approved - or (b)
+// stripping unrecognised trailing tokens more aggressively, which risks
+// truncating a genuine title that legitimately ends in something salary- or
+// number-shaped ("Software Engineer II - $150K Signing Bonus" is a title a
+// recruiter could plausibly write). An enumerated badge list being
+// inevitably incomplete is a known, accepted tradeoff everywhere else in this
+// file (see BADGE_LINE_PATTERNS' and TRAILING_BADGE_RES' own doc comments);
+// this test exists so that if this specific case is ever closed, it is a
+// deliberate change to this assertion, not a silent behavior drift.
+//
+// The invariant that DOES hold, and is asserted below: company never
+// fabricates a value it cannot support. It resolves to "Unknown", not to a
+// guess - the untidy title is the only cost.
+// ---------------------------------------------------------------------------
+describe("parseAlertEmail - nested card with no location paragraph (known gap, pinned)", () => {
+  const [job] = parseAlertEmail(fixture("nested-card-no-location.html"));
+
+  it("glues an unrecognised trailing token onto the title", () => {
+    // Accepted, documented behaviour - not the desired outcome, but not a
+    // fabricated field either. See the block comment above for why this is
+    // pinned instead of fixed.
+    expect(job.title).toBe("Platform Engineer $4M-$5M / year");
+  });
+
+  it("still refuses to guess a company rather than report the salary text as one", () => {
+    expect(job.company).toBe("Unknown");
   });
 });

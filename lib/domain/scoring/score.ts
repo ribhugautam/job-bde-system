@@ -3,6 +3,7 @@ import {
   TARGET_ROLES,
   CONTRACT_KEYWORDS,
   ROLE_VETO_PHRASES,
+  yearsOfExperience,
 } from "./resume-profile";
 import { RawJob, RawLead } from "@/lib/domain/types";
 
@@ -71,46 +72,6 @@ const MAX_SKILL_WEIGHT = SKILLS.reduce((total, skill) => total + skill.weight, 0
 // user actually applied to and heard back from), not a guess, and any change
 // invalidates MATCH_THRESHOLD in lib/pipeline/stages/score.ts.
 const FULL_CREDIT_FRACTION = 0.35;
-
-// ---------------------------------------------------------------------------
-// Seniority guard
-// ---------------------------------------------------------------------------
-
-/** Ribhu has ~3 years, so a hard floor at or above this is a filter he fails. */
-const OVER_EXPERIENCED_YEARS = 8;
-
-const OVER_EXPERIENCED_REASON = `requires ${OVER_EXPERIENCED_YEARS}+ years experience - likely mismatch`;
-
-// The shapes a years-of-experience *requirement* actually takes in postings.
-// Each pattern captures the number that represents the floor, which is then
-// compared against OVER_EXPERIENCED_YEARS - so "2+ years" and "3-5 years" are
-// matched and then correctly ignored rather than being absent from the regex.
-//
-// A bare "10 years" is deliberately NOT a requirement: "founded 10 years ago"
-// and "serving clients for over 10 years" are company blurbs, not seniority
-// bars, and they are common enough that including them would misfire often.
-// `(?<!\d)` is what stops "110+ years" being read as "10+ years".
-const YEARS_REQUIREMENT_PATTERNS = [
-  // "8+ years", "10 + yrs", "10 or more years"
-  /(?<!\d)(\d{1,2})\s*(?:\+|or\s+more)\s*(?:years?|yrs?)(?![a-z])/g,
-  // "8-12 years" - the lower bound is the requirement being stated
-  /(?<!\d)(\d{1,2})\s*[-–]\s*\d{1,2}\s*(?:years?|yrs?)(?![a-z])/g,
-  // "at least 10 years", "minimum of 10 years", "min. 10 yrs"
-  /(?:at\s+least|minimum(?:\s+of)?|min\.?)\s+(?<!\d)(\d{1,2})\s*(?:years?|yrs?)(?![a-z])/g,
-];
-
-function requiresTooManyYears(text: string): boolean {
-  for (const pattern of YEARS_REQUIREMENT_PATTERNS) {
-    // These regexes are module-level and /g, so lastIndex must be reset or a
-    // previous call would leak its cursor into this one.
-    pattern.lastIndex = 0;
-    let match: RegExpExecArray | null;
-    while ((match = pattern.exec(text)) !== null) {
-      if (Number(match[1]) >= OVER_EXPERIENCED_YEARS) return true;
-    }
-  }
-  return false;
-}
 
 // ---------------------------------------------------------------------------
 // Target-role matching
@@ -233,6 +194,98 @@ function roleVetoReason(phrase: string): string {
   return `title is a non-engineering role ("${phrase}") - excluded regardless of the skills below`;
 }
 
+// ---------------------------------------------------------------------------
+// Fit adjustments
+//
+// Applied to the NORMALIZED 0-100 score, not to the raw accumulator, and this
+// is deliberate. The divisor at the bottom of scoreJob multiplies a raw point by
+// roughly 2.9, so the old `raw -= 15` for an internship was really -43 points of
+// the final score — a magnitude nobody chose. Expressing these in real points
+// makes each one legible and independently tunable, and leaves the skill curve
+// (which the comment on FULL_CREDIT_FRACTION warns not to retune without
+// outcome data) completely untouched.
+//
+// None of these is fatal. The operator asked to SEE hybrid and on-site roles and
+// filter them, not to have them silently discarded — the one fatal rule in this
+// file remains the role veto.
+// ---------------------------------------------------------------------------
+
+/** A stated floor this far above the candidate's years is a filter they fail. */
+const EXPERIENCE_TOLERANCE_YEARS = 2;
+
+const GEO_RESTRICTED_PENALTY = -25;
+// +10, not +8: at +8 this exactly cancelled ARRANGEMENT_ONSITE_PENALTY
+// (-8), so an India-eligible on-site job scored identically to a job where
+// NEITHER axis was known - arrangement became a complete no-op for exactly
+// the population (India-eligible postings) the operator cares most about.
+// +10 breaks the cancellation while leaving every other constant, and the
+// skill curve, untouched.
+const GEO_ELIGIBLE_BONUS = 10;
+const EXPERIENCE_OVER_PENALTY = -20;
+const EXPERIENCE_BRACKET_BONUS = 6;
+const ARRANGEMENT_REMOTE_BONUS = 5;
+const ARRANGEMENT_ONSITE_PENALTY = -8;
+
+export function fitAdjustment(
+  job: RawJob,
+  years: number = yearsOfExperience()
+): { delta: number; reasons: string[] } {
+  const reasons: string[] = [];
+  let delta = 0;
+
+  switch (job.geoEligibility) {
+    case "restricted":
+      delta += GEO_RESTRICTED_PENALTY;
+      reasons.push(
+        `not open to your location${
+          job.geoRegions?.length ? ` (hiring in: ${job.geoRegions.join(", ")})` : ""
+        }`
+      );
+      break;
+    case "worldwide":
+      delta += GEO_ELIGIBLE_BONUS;
+      reasons.push("open worldwide - no location restriction");
+      break;
+    case "eligible":
+      delta += GEO_ELIGIBLE_BONUS;
+      reasons.push("open to your location");
+      break;
+    default:
+      reasons.push("location eligibility not stated by this source");
+  }
+
+  if (job.minYears !== undefined) {
+    if (job.minYears > years + EXPERIENCE_TOLERANCE_YEARS) {
+      delta += EXPERIENCE_OVER_PENALTY;
+      reasons.push(
+        `wants ${job.minYears}+ years, you have ~${years.toFixed(1)} - likely filtered out`
+      );
+    } else if (job.maxYears !== undefined && job.minYears <= years && years <= job.maxYears) {
+      delta += EXPERIENCE_BRACKET_BONUS;
+      reasons.push(`asks for ${job.minYears}-${job.maxYears} years - you are in range`);
+    }
+  }
+
+  switch (job.arrangement) {
+    case "remote":
+      delta += ARRANGEMENT_REMOTE_BONUS;
+      reasons.push("remote");
+      break;
+    case "hybrid":
+      delta += ARRANGEMENT_ONSITE_PENALTY;
+      reasons.push("hybrid - requires office presence");
+      break;
+    case "onsite":
+      delta += ARRANGEMENT_ONSITE_PENALTY;
+      reasons.push("on-site - requires office presence");
+      break;
+    default:
+      reasons.push("work arrangement not stated by this source");
+  }
+
+  return { delta, reasons };
+}
+
 /**
  * Scores a job 0-100 against Ribhu's resume skills + target roles.
  * Returns the score plus human-readable reasons (shown in the dashboard so
@@ -268,31 +321,13 @@ export function scoreJob(job: RawJob): { score: number; reasons: string[] } {
     reasons.push("title matches a targeted role");
   }
 
-  // Remote preference - remote is the stated preference, not a hard filter.
-  //
-  // Three states, not two: plenty of sources simply never say. Scoring an
-  // unknown as if it were a confirmed on-site role both understates the job
-  // and puts a claim in the reasons list that the data does not support, so
-  // unknown gets no bonus, no penalty, and a reason that says so.
-  if (job.remote === true) {
-    raw += 4;
-    reasons.push("remote");
-  } else if (job.remote === false) {
-    reasons.push("NOT remote - lower priority");
-  } else {
-    reasons.push("remote status not stated by this source");
-  }
-
-  // Seniority guard: penalize roles that read as far too junior, or that set an
-  // experience floor Ribhu cannot clear, since his experience is ~3 years but
-  // at a senior scope (led 15 engineers, architected multi-agent systems).
+  // Seniority guard: penalize roles that read as far too junior. The
+  // complementary guard - an experience floor Ribhu cannot clear - is handled
+  // below as a fit adjustment against job.minYears (see fitAdjustment), not by
+  // re-parsing text here.
   if (/\b(intern|internship)\b/.test(title)) {
     raw -= 15;
     reasons.push("looks like an internship - deprioritized");
-  }
-  if (requiresTooManyYears(text)) {
-    raw -= 10;
-    reasons.push(OVER_EXPERIENCED_REASON);
   }
 
   // `sparse` means we have a title but no description, so only skills visible
@@ -336,7 +371,10 @@ export function scoreJob(job: RawJob): { score: number; reasons: string[] } {
     )
   );
 
-  return { score: normalized, reasons };
+  const fit = fitAdjustment(job);
+  reasons.push(...fit.reasons);
+
+  return { score: Math.max(0, Math.min(100, normalized + fit.delta)), reasons };
 }
 
 /**
