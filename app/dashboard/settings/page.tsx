@@ -1,7 +1,4 @@
 import { LINKS } from "@/lib/domain/scoring/resume-profile";
-import { getActiveResume } from "@/lib/infra/db/documents";
-import ResumeUpload from "@/components/ResumeUpload";
-import RunPipelineButton from "@/components/RunPipelineButton";
 
 export const dynamic = "force-dynamic";
 
@@ -31,76 +28,40 @@ function EnvRow({
   let tone: string;
   if (set) {
     label = "set";
-    tone = "text-emerald-400";
+    tone = "text-(--ok-fg)";
   } else if (fallback !== undefined) {
     label = `default: ${fallback}`;
-    tone = "text-amber-400";
+    tone = "text-(--warn-fg)";
   } else if (required) {
     label = "missing";
-    tone = "text-red-400";
+    tone = "text-(--danger-fg)";
   } else {
     label = "not set";
-    tone = "text-neutral-500";
+    tone = "text-(--text-dim)";
   }
 
   return (
-    <div className="flex items-center justify-between gap-3 border-b border-neutral-900 py-2 text-sm">
+    <div className="flex items-center justify-between gap-3 border-b border-(--border) py-2 text-sm">
       <div className="min-w-0">
         <div className="font-mono text-xs">{name}</div>
-        <div className="text-xs text-neutral-500">{hint}</div>
+        <div className="text-xs text-(--text-dim)">{hint}</div>
       </div>
       <span className={`shrink-0 text-xs ${tone}`}>{label}</span>
     </div>
   );
 }
 
-export default async function SettingsPage() {
+export default function SettingsPage() {
   const dryRun = process.env.DRY_RUN === "1";
-  const resume = await getActiveResume();
   return (
     <div className="space-y-8 max-w-2xl">
-      <div>
-        <h2 className="mb-2 text-sm font-semibold text-neutral-300">Resume</h2>
-        <div className="rounded border border-neutral-800 p-3 space-y-3">
-          {resume ? (
-            <div className="text-sm">
-              <span className="text-emerald-400">On file:</span>{" "}
-              <span className="font-mono text-xs">{resume.filename}</span>{" "}
-              <span className="text-xs text-neutral-500">
-                ({(resume.sizeBytes / 1024).toFixed(0)} KB
-                {resume.uploadedAt
-                  ? `, uploaded ${new Date(resume.uploadedAt).toLocaleDateString()}`
-                  : ""}
-                )
-              </span>
-            </div>
-          ) : (
-            <div className="text-sm text-red-400">
-              No resume uploaded. Applications will be queued for review instead of
-              sent — an application email with no CV attached is worse than none.
-            </div>
-          )}
-          <ResumeUpload />
-          <p className="text-xs text-neutral-500">
-            PDF only, max 2MB. Attached to every application sent by email;
-            deliberately not attached to cold freelance outreach (hurts spam
-            scoring). Uploading replaces the active resume; older versions are
-            kept so you can tell which CV went with which application.
-          </p>
-        </div>
-      </div>
-
-      <div
-        className={`rounded border p-3 ${
-          dryRun
-            ? "border-amber-700 bg-amber-950/30"
-            : "border-red-800 bg-red-950/30"
-        }`}
-      >
-        <div className="text-sm font-semibold">
+      <div className="rounded border border-(--border) p-3">
+        <div
+          className={`text-sm font-semibold ${dryRun ? "text-(--warn-fg)" : "text-(--danger-fg)"}`}
+        >
           {dryRun ? "DRY RUN — no email will be sent" : "LIVE — email will be sent automatically"}
         </div>
-        <div className="mt-1 text-xs text-neutral-400">
+        <div className="mt-1 text-xs text-(--text-muted)">
           {dryRun
             ? "The daily run drafts applications and pitches into the dashboard only. Nothing leaves your Gmail, including the digest. Set DRY_RUN=0 (or remove it) to go live."
             : "Applications auto-send to any listing that publishes an apply-by-email address, and outreach auto-sends up to the daily cap. Set DRY_RUN=1 to draft without sending."}
@@ -108,11 +69,32 @@ export default async function SettingsPage() {
       </div>
 
       <div>
-        <h2 className="mb-2 text-sm font-semibold text-neutral-300">Environment</h2>
-        <div className="rounded border border-neutral-800 p-3">
+        <h2 className="mb-2 text-sm font-semibold text-(--text-muted)">Environment</h2>
+        <div className="rounded border border-(--border) p-3">
           <EnvRow required name="APP_PASSWORD" hint="Unlocks the whole app; min 8 chars (use random, not a word) or every route serves 503" />
           <EnvRow required name="AUTH_SECRET" hint="Signs the session cookie; openssl rand -hex 32" />
           <EnvRow required name="CRON_SECRET" hint="Protects /api/cron/daily - the one route outside the password gate" />
+          <details className="border-b border-(--border) py-2 text-xs text-(--text-dim)">
+            <summary className="cursor-pointer">
+              Trigger from a terminal or CI instead
+            </summary>
+            <p className="mt-2">
+              The Run pipeline button in the header is authorized by your
+              dashboard session, so no secret is involved there. Outside the
+              browser there is no session, so use{" "}
+              <span className="font-mono">CRON_SECRET</span> against the cron
+              route. It goes in the{" "}
+              <span className="font-mono">Authorization</span> header — it is
+              deliberately not accepted as a query param, because query
+              strings are written to Vercel&apos;s request logs in plaintext.
+            </p>
+            <pre className="mt-2 overflow-x-auto rounded bg-(--surface) p-3 text-(--text-muted)">
+              curl -X GET -H &quot;Authorization: Bearer $CRON_SECRET&quot; \{"\n"}
+              {"  "}
+              {process.env.NEXT_PUBLIC_APP_URL || "https://your-app.vercel.app"}
+              /api/cron/daily
+            </pre>
+          </details>
           <EnvRow name="TURSO_DATABASE_URL" hint="libSQL/Turso database URL" fallback="local ./local.db file" />
           <EnvRow name="TURSO_AUTH_TOKEN" hint="Turso token; required whenever the URL is remote" />
           <EnvRow required name="GMAIL_USER" hint="Gmail address that sends applications, outreach and follow-ups" />
@@ -121,6 +103,8 @@ export default async function SettingsPage() {
           <EnvRow name="DRY_RUN" hint="Draft everything, send nothing - see the banner above" fallback="0 (live)" />
           <EnvRow name="MATCH_THRESHOLD" hint="Fit score a job must reach to be drafted" fallback="40" />
           <EnvRow name="ENABLE_LINKEDIN_ALERTS" hint="Reads LinkedIn job alerts from your own inbox over IMAP, read-only" fallback="off" />
+          <EnvRow name="ENABLE_WELLFOUND_ALERTS" hint="Reads Wellfound &quot;New jobs:&quot; digests from your own inbox over IMAP, read-only" fallback="off" />
+          <EnvRow name="ENABLE_INDEED_ALERTS" hint="Reads Indeed job-alert digests the same way; high volume, skews toward agency postings" fallback="off" />
           <EnvRow name="ENABLE_LINKEDIN_ENRICH" hint="Recovers descriptions from the public LinkedIn page (no login, no session)" fallback="on" />
           <EnvRow name="LINKEDIN_ENRICH_DAILY_CAP" hint="Max public page fetches per day" fallback="80" />
           <EnvRow name="ENABLE_FOLLOWUPS" hint="One nudge at day 4, a final at day 10, then stop permanently" fallback="on" />
@@ -136,12 +120,12 @@ export default async function SettingsPage() {
       </div>
 
       <div>
-        <h2 className="mb-2 text-sm font-semibold text-neutral-300">Links used in drafts — verify these</h2>
-        <div className="rounded border border-neutral-800 p-3 text-sm space-y-1">
-          <div>LinkedIn: {LINKS.linkedin} <span className="text-emerald-400 text-xs">(confirmed)</span></div>
-          <div className="text-neutral-500">
+        <h2 className="mb-2 text-sm font-semibold text-(--text-muted)">Links used in drafts — verify these</h2>
+        <div className="rounded border border-(--border) p-3 text-sm space-y-1">
+          <div>LinkedIn: {LINKS.linkedin} <span className="text-(--ok-fg) text-xs">(confirmed)</span></div>
+          <div className="text-(--text-dim)">
             GitHub: {LINKS.github}{" "}
-            <span className="text-amber-400 text-xs">
+            <span className="text-(--warn-fg) text-xs">
               (excluded from all outreach — pinned repos are student projects. Repin, then re-add it in lib/domain/drafting/compose.ts)
             </span>
           </div>
@@ -149,42 +133,9 @@ export default async function SettingsPage() {
           <div>Ziro: {LINKS.ziro}</div>
           <div>Email: {LINKS.email}</div>
         </div>
-        <p className="mt-2 text-xs text-neutral-500">
+        <p className="mt-2 text-xs text-(--text-dim)">
           Edit lib/domain/scoring/resume-profile.ts to fix any of these — they flow straight into every cover letter and pitch.
         </p>
-      </div>
-
-      <div>
-        <h2 className="mb-2 text-sm font-semibold text-neutral-300">Manual run</h2>
-        <p className="mb-3 text-sm text-neutral-400">
-          Trigger the pipeline on demand. The worker is resumable: it drains
-          queued work until it runs out of time budget, then stops cleanly and
-          continues on the next run. Running it repeatedly is safe, and is how
-          you flush a backlog faster than the cron would.
-        </p>
-
-        <RunPipelineButton dryRun={dryRun} />
-
-        <details className="mt-4 text-xs text-neutral-500">
-          <summary className="cursor-pointer">
-            Trigger from a terminal or CI instead
-          </summary>
-          <p className="mt-2">
-            The button above is authorized by your dashboard session, so no
-            secret is involved. Outside the browser there is no session, so use{" "}
-            <span className="font-mono">CRON_SECRET</span> against the cron
-            route. It goes in the{" "}
-            <span className="font-mono">Authorization</span> header — it is
-            deliberately not accepted as a query param, because query strings
-            are written to Vercel&apos;s request logs in plaintext.
-          </p>
-          <pre className="mt-2 overflow-x-auto rounded bg-neutral-900 p-3 text-neutral-300">
-            curl -X GET -H &quot;Authorization: Bearer $CRON_SECRET&quot; \{"\n"}
-            {"  "}
-            {process.env.NEXT_PUBLIC_APP_URL || "https://your-app.vercel.app"}
-            /api/cron/daily
-          </pre>
-        </details>
       </div>
     </div>
   );
