@@ -1,73 +1,63 @@
-import { getDb, schema } from "@/lib/infra/db/client";
-import { desc } from "drizzle-orm";
-import StatusBadge from "@/components/StatusBadge";
-import { StatusSelect } from "@/components/ActionButtons";
+import { getDb } from "@/lib/infra/db/client";
+import { parseJobFilters } from "@/lib/domain/jobs/filters";
+import { fetchFilteredJobs, fetchJobSources } from "@/lib/infra/db/job-queries";
+import FilterBar from "@/components/jobs/FilterBar";
+import JobRow from "@/components/jobs/JobRow";
+import DismissButton from "@/components/jobs/DismissButton";
 import DbErrorNotice from "@/components/DbErrorNotice";
 
 export const dynamic = "force-dynamic";
 
-const JOB_STATUSES = [
-  "found", "matched", "ready_for_review", "sent", "responded",
-  "interview", "offer", "rejected", "ignored",
-];
+const PAGE_SIZE = 200;
 
-export default async function JobsPage() {
-  let jobs;
+export default async function JobsPage({ searchParams }: PageProps<"/dashboard/jobs">) {
+  // Next 16 delivers searchParams as a promise.
+  const raw = await searchParams;
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(raw)) {
+    if (Array.isArray(value)) value.forEach((v) => params.append(key, v));
+    else if (value !== undefined) params.append(key, value);
+  }
+  const filters = parseJobFilters(params);
+
+  // JSX construction stays out of the try: React defers rendering, so a
+  // try/catch around a `return (<jsx/>)` would not actually catch render
+  // errors — only the data fetch belongs in here. See the same pattern in
+  // every other dashboard page (queue, applications, leads, outreach).
+  let jobsData;
   try {
-    jobs = await getDb()
-      .select()
-      .from(schema.jobs)
-      .orderBy(desc(schema.jobs.score))
-      .limit(200);
+    const db = getDb();
+    const [{ rows, total }, sources] = await Promise.all([
+      fetchFilteredJobs(db, filters, PAGE_SIZE),
+      fetchJobSources(db),
+    ]);
+    jobsData = { rows, total, sources };
   } catch (err) {
-    // Without this the page throws and Next renders a blank "server error",
-    // which in production also hides the message. Say what actually broke.
     return <DbErrorNotice error={err} />;
   }
 
+  const { rows, total, sources } = jobsData;
+
   return (
-    <div className="space-y-3">
-      <h2 className="text-sm font-semibold text-neutral-300">
-        {jobs.length} jobs, ranked by fit score
-      </h2>
-      <div className="space-y-2">
-        {jobs.map((job) => (
-          <div key={job.id} className="rounded border border-neutral-800 p-3">
-            <div className="flex flex-wrap items-start justify-between gap-2">
-              <div>
-                <a
-                  href={job.url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="font-medium text-white hover:underline"
-                >
-                  {job.title}
-                </a>
-                <div className="text-xs text-neutral-400">
-                  {job.company} · {job.location} · {job.source}
-                  {job.salaryText ? ` · ${job.salaryText}` : ""}
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-neutral-400">score {job.score}</span>
-                <StatusBadge status={job.status} />
-                <StatusSelect entity="job" id={job.id} status={job.status} options={JOB_STATUSES} />
-              </div>
-            </div>
-            {job.scoreReasons && (job.scoreReasons as string[]).length > 0 && (
-              <div className="mt-2 flex flex-wrap gap-1">
-                {(job.scoreReasons as string[]).map((r, i) => (
-                  <span key={i} className="rounded bg-neutral-900 px-1.5 py-0.5 text-[10px] text-neutral-400">
-                    {r}
-                  </span>
-                ))}
-              </div>
-            )}
+    <div className="-mx-6 -my-6">
+      <FilterBar
+        filters={filters}
+        total={total}
+        shown={rows.length}
+        sources={sources}
+      />
+      <div>
+        {rows.map((job) => (
+          <div key={job.id} className="group relative">
+            <JobRow job={job} />
+            <span className="absolute right-3 top-2 hidden group-hover:block">
+              <DismissButton jobId={job.id} dismissed={job.status === "ignored"} />
+            </span>
           </div>
         ))}
-        {jobs.length === 0 && (
-          <p className="text-sm text-neutral-500">
-            No jobs yet - wait for the first daily cron run, or trigger one manually.
+        {rows.length === 0 && (
+          <p className="px-3 py-6 text-sm text-(--text-dim)">
+            No jobs match these filters.
           </p>
         )}
       </div>
