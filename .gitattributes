@@ -1,0 +1,9 @@
+# core.autocrlf is on for this checkout, so Git treats anything it guesses is
+# text as line-ending-normalisable. For a PDF that is corruption, not
+# normalisation: a stored resume fixture round-tripped through CRLF no longer
+# parses, and the failure shows up as an inexplicable extraction test failure
+# on one machine and not another.
+*.pdf binary
+*.png binary
+*.jpg binary
+*.ico binary
