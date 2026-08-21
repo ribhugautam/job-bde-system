@@ -2,6 +2,7 @@ import { and, desc, eq, gte, inArray } from "drizzle-orm";
 import { schema } from "@/lib/infra/db/client";
 import { sendMail } from "@/lib/infra/mail/send";
 import { getActiveResume } from "@/lib/infra/db/documents";
+import { getOwnerUserId } from "@/lib/infra/db/users";
 import type { StageContext, StageResult } from "../context";
 import { claimJobs, claimLeads, failJob, failLead } from "./claim";
 import { nextFollowUpDue } from "../followup-schedule";
@@ -35,7 +36,11 @@ export async function runDispatch(ctx: StageContext): Promise<StageResult> {
     return { processed: 0, hasMore: false };
   }
 
-  const resume = await getActiveResume();
+  // The unattended pipeline still runs one shared queue rather than one per
+  // person, so it uses the owner's resume -- the same single row it read before
+  // accounts existed. Per-user drafting is what makes this per-user.
+  const ownerId = await getOwnerUserId();
+  const resume = ownerId === null ? null : await getActiveResume(ownerId);
   if (!resume && jobs.length > 0) {
     // A notice, not an error: nothing broke, and queueing rather than sending
     // without a CV is the correct behavior. It is still the single most
@@ -98,7 +103,10 @@ async function dispatchJobs(
     }
 
     try {
-      const canSend = Boolean(job.applyEmail) && Boolean(resume);
+      // ctx.sender is the new gate alongside applyEmail and resume: with no
+      // usable mailbox there is no address this could honestly come from.
+      const canSend =
+        Boolean(job.applyEmail) && Boolean(resume) && Boolean(ctx.sender);
       const willSend = canSend && !ctx.env.DRY_RUN;
 
       if (!willSend) {
@@ -128,6 +136,7 @@ async function dispatchJobs(
       }
 
       const result = await sendMail({
+        from: ctx.sender!,
         to: job.applyEmail!,
         subject: `Application: ${job.title}`,
         text: app.coverLetter,
@@ -247,7 +256,8 @@ async function dispatchLeads(
     }
 
     try {
-      const canSend = Boolean(lead.contactEmail) && remaining > 0;
+      const canSend =
+        Boolean(lead.contactEmail) && remaining > 0 && Boolean(ctx.sender);
       const willSend = canSend && !ctx.env.DRY_RUN;
 
       if (!willSend) {
@@ -279,6 +289,7 @@ async function dispatchLeads(
       // email with a PDF attached scores materially worse with spam filters,
       // and a freelance client wants a portfolio link first, not a CV.
       const result = await sendMail({
+        from: ctx.sender!,
         to: lead.contactEmail!,
         subject: `Re: ${lead.title}`,
         text: pitch.pitch,

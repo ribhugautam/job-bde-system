@@ -83,6 +83,25 @@ const schema = z.object({
     )
     .optional(),
 
+  /**
+   * Encrypts colleagues' stored mailbox passwords at rest.
+   *
+   * SEPARATE FROM AUTH_SECRET on purpose. AUTH_SECRET signs session cookies and
+   * is expected to be rotated -- the docs already say rotating it signs
+   * everyone out, which is cheap and recoverable. If it also encrypted
+   * credentials, that same rotation would silently destroy every stored
+   * mailbox password, and the damage would surface days later as applications
+   * quietly failing to send.
+   *
+   * Optional: without it, mailbox setup is refused outright and everything is
+   * drafted and queued instead. Nothing falls back to storing a plaintext
+   * secret.
+   */
+  ENCRYPTION_KEY: z
+    .string()
+    .min(32, "ENCRYPTION_KEY must be at least 32 characters (openssl rand -hex 32)")
+    .optional(),
+
   // --- Cron ----------------------------------------------------------------
   CRON_SECRET: optionalStr,
 
@@ -92,6 +111,18 @@ const schema = z.object({
 
   // --- Matching ------------------------------------------------------------
   MATCH_THRESHOLD: intWithDefault(40, 0, 100),
+
+  /**
+   * How long an untriaged job stays in the inbox before it moves to archive.
+   *
+   * An env var rather than a constant because it is a judgement about a market,
+   * not about the code: how long a posting stays genuinely open varies, and the
+   * right number is whatever stops you triaging jobs that were filled weeks
+   * ago. Nothing is deleted and nothing is written when this changes -- staleness
+   * is a read-time date comparison, so raising or lowering it reflows every
+   * bucket instantly and reversibly.
+   */
+  JOB_STALE_DAYS: intWithDefault(30, 1, 365),
 
   // --- LinkedIn ingest (own inbox, IMAP, read-only) ------------------------
   ENABLE_LINKEDIN_ALERTS: boolFlag(false),
@@ -126,7 +157,6 @@ const schema = z.object({
   ADZUNA_APP_ID: optionalStr,
   ADZUNA_APP_KEY: optionalStr,
   ANTHROPIC_API_KEY: optionalStr,
-  ENABLE_UPWORK_RSS: boolFlag(false),
   OUTREACH_DAILY_CAP: intWithDefault(10, 0, 200),
 
   NEXT_PUBLIC_APP_URL: optionalStr,
@@ -149,9 +179,11 @@ function build(raw: NodeJS.ProcessEnv) {
     OWNER_EMAIL: raw.OWNER_EMAIL,
     APP_PASSWORD: raw.APP_PASSWORD,
     AUTH_SECRET: raw.AUTH_SECRET,
+    ENCRYPTION_KEY: raw.ENCRYPTION_KEY,
     CRON_SECRET: raw.CRON_SECRET,
     DRY_RUN: raw.DRY_RUN,
     MATCH_THRESHOLD: raw.MATCH_THRESHOLD,
+    JOB_STALE_DAYS: raw.JOB_STALE_DAYS,
     ENABLE_LINKEDIN_ALERTS: raw.ENABLE_LINKEDIN_ALERTS,
     ENABLE_WELLFOUND_ALERTS: raw.ENABLE_WELLFOUND_ALERTS,
     ENABLE_INDEED_ALERTS: raw.ENABLE_INDEED_ALERTS,
@@ -173,7 +205,6 @@ function build(raw: NodeJS.ProcessEnv) {
     ADZUNA_APP_ID: raw.ADZUNA_APP_ID,
     ADZUNA_APP_KEY: raw.ADZUNA_APP_KEY,
     ANTHROPIC_API_KEY: raw.ANTHROPIC_API_KEY,
-    ENABLE_UPWORK_RSS: raw.ENABLE_UPWORK_RSS,
     OUTREACH_DAILY_CAP: raw.OUTREACH_DAILY_CAP,
     NEXT_PUBLIC_APP_URL: raw.NEXT_PUBLIC_APP_URL,
   });

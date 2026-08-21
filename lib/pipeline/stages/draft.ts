@@ -66,6 +66,11 @@ export async function runDraft(ctx: StageContext): Promise<StageResult> {
       );
 
       await ctx.db.insert(schema.applications).values({
+        // The unattended pipeline drafts on the owner's behalf -- it runs one
+        // shared queue, in their voice, from their mailbox. Recording that
+        // explicitly is what lets dispatch pick the right sender and the right
+        // resume instead of assuming there is only one of each.
+        userId: ctx.ownerUserId,
         jobId: job.id,
         coverLetter: draft.text,
         emphasizedSkills: draft.emphasizedSkills,
@@ -111,6 +116,7 @@ export async function runDraft(ctx: StageContext): Promise<StageResult> {
       );
 
       await ctx.db.insert(schema.outreach).values({
+        userId: ctx.ownerUserId,
         leadId: lead.id,
         pitch: draft.text,
         generatedBy: draft.generatedBy,

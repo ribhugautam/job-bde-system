@@ -32,6 +32,11 @@ export function isPublic(pathname: string): boolean {
   if (pathname === "/login") return true;
   if (pathname === "/api/auth/login") return true;
   if (pathname === "/api/auth/logout") return true;
+  // Accepting an invite necessarily happens with no session — that is the
+  // point of an invite. The token in the URL is the credential, and it is
+  // validated (single-use, unexpired, unrevoked) by the route itself.
+  if (pathname.startsWith("/invite/")) return true;
+  if (pathname === "/api/auth/accept-invite") return true;
   // Vercel Cron cannot carry a browser cookie. This route does its own
   // fail-closed CRON_SECRET bearer check - see app/api/cron/daily/route.ts.
   if (pathname.startsWith("/api/cron/")) return true;
@@ -72,11 +77,15 @@ export async function proxy(req: NextRequest) {
 
   if (isPublic(pathname)) return NextResponse.next();
 
-  const ok = await verifySessionToken(
+  // Signature and expiry only. This deliberately does NOT prove the user still
+  // exists or is still active — the Edge runtime cannot reach the database.
+  // getSessionUser() in lib/infra/session.ts closes that gap on every page and
+  // route; this gate exists to keep unauthenticated traffic off them entirely.
+  const claims = await verifySessionToken(
     req.cookies.get(SESSION_COOKIE)?.value,
     auth.secret
   );
-  if (ok) return NextResponse.next();
+  if (claims) return NextResponse.next();
 
   // API callers get JSON: the dashboard's fetch() calls parse res.json(), and a
   // 307 to an HTML login page would blow up there with a confusing parse error.

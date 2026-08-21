@@ -107,7 +107,14 @@ export async function sendDigestEmail(
       ? ` (${ctx.errors.length} problem${ctx.errors.length === 1 ? "" : "s"})`
       : "");
 
-  const result = await sendDigest(subject, body);
+  if (!ctx.sender) {
+    // The run already carries a notice explaining that no mailbox is
+    // configured, so this would be the same news twice — and reporting it as a
+    // digest FAILURE would be misleading, since nothing broke.
+    return;
+  }
+
+  const result = await sendDigest(subject, body, ctx.sender);
   if (!result.ok) {
     ctx.errors.push(`digest email: ${result.error}`);
   }

@@ -41,6 +41,9 @@ async function buildCtx(): Promise<{ ctx: StageContext; db: StageContext["db"] }
     counters: emptyCounters(),
     errors: [],
     notices: [],
+    // Enrich never sends, so a null sender is the honest fixture here.
+    sender: null,
+    ownerUserId: null,
   };
   return { ctx, db };
 }

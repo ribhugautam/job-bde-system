@@ -20,6 +20,10 @@ import { createClient } from "@libsql/client";
 import { drizzle } from "drizzle-orm/libsql";
 import { migrate } from "drizzle-orm/libsql/migrator";
 import { resolveDbTarget } from "./db-target";
+import {
+  claimOrphanedRecords,
+  ensureFirstAdmin,
+} from "../lib/infra/db/seed-admin";
 
 const MIGRATIONS_FOLDER = "lib/infra/db/migrations";
 
@@ -49,6 +53,35 @@ async function main() {
   }
 
   console.log(`Done. ${tables.length} tables: ${tables.join(", ")}`);
+
+  // Seeding the first admin is part of migrating, not a separate step somebody
+  // has to remember. The migration that creates `users` is the exact moment the
+  // app stops accepting APP_PASSWORD and starts requiring an account, so a
+  // deployment that migrated and did not seed is one nobody can log into — and
+  // registration is invite-only, so there would be nobody to issue the first
+  // invite either. See lib/infra/db/seed-admin.ts.
+  const seeded = await ensureFirstAdmin();
+  if (seeded.created) {
+    console.log(
+      `Created the first admin account: ${seeded.email}\n` +
+        `  Sign in with APP_PASSWORD, then change it from the dashboard.`
+    );
+  } else {
+    console.log(`First-admin seed skipped: ${seeded.reason}`);
+  }
+
+  // Rows written before accounts existed have no owner. Assigning them is part
+  // of migrating, not an optional cleanup -- an unowned resume is invisible to
+  // every read path, since those are all scoped to a user by design.
+  const claimed = await claimOrphanedRecords();
+  const total = claimed.documents + claimed.applications + claimed.outreach;
+  if (total > 0) {
+    console.log(
+      `Assigned pre-accounts rows to the owner: ${claimed.documents} document(s), ` +
+        `${claimed.applications} application(s), ${claimed.outreach} outreach.`
+    );
+  }
+
   client.close();
 }
 

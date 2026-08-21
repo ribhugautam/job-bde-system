@@ -42,74 +42,6 @@ export const CANDIDATE = {
     "US-based clients.",
 };
 
-// Weighted skills used by the matcher. Weight roughly reflects resume-listed
-// proficiency (Strong/Intermediate/Beginner) plus how central it is to
-// Ribhu's actual shipped work (e.g. "agentic ai" shows up in every current
-// project, so it's weighted like a Strong skill even though it's not a
-// single line item on the resume).
-export const SKILLS: { name: string; weight: number; aliases?: string[] }[] = [
-  // Strong
-  { name: "react", weight: 3, aliases: ["react.js", "reactjs"] },
-  { name: "next.js", weight: 3, aliases: ["nextjs", "next js"] },
-  { name: "typescript", weight: 3, aliases: ["ts"] },
-  { name: "javascript", weight: 3, aliases: ["js"] },
-  { name: "node.js", weight: 3, aliases: ["node", "nodejs"] },
-  { name: "flutter", weight: 3 },
-  { name: "dart", weight: 2 },
-  { name: "tailwind", weight: 2, aliases: ["tailwind css", "tailwindcss"] },
-  { name: "redux toolkit", weight: 2, aliases: ["redux"] },
-  { name: "tanstack query", weight: 2, aliases: ["react query"] },
-  { name: "mongodb", weight: 2 },
-  { name: "rest api", weight: 2, aliases: ["restful", "rest apis"] },
-  { name: "aws amplify", weight: 2, aliases: ["amplify"] },
-  { name: "appwrite", weight: 1 },
-  { name: "azure devops", weight: 2, aliases: ["azure ci/cd", "azure", "ci/cd"] },
-  { name: "github actions", weight: 2, aliases: ["ci/cd pipeline"] },
-  { name: "monorepo", weight: 2, aliases: ["turborepo", "nx monorepo"] },
-  { name: "microservices", weight: 2, aliases: ["microservice"] },
-  { name: "api integration", weight: 2, aliases: ["third-party api", "third party api"] },
-  { name: "agile", weight: 1, aliases: ["scrum"] },
-  { name: "git", weight: 2 },
-  { name: "architecture", weight: 2, aliases: ["system design", "architecture design"] },
-
-  // Agentic AI cluster — weighted heavily, this is Ribhu's differentiator
-  { name: "agentic ai", weight: 4, aliases: ["ai agent", "ai agents", "autonomous agent"] },
-  { name: "llm", weight: 4, aliases: ["large language model", "llm orchestration"] },
-  { name: "rag", weight: 4, aliases: ["retrieval augmented generation", "rag pipeline"] },
-  { name: "multi-agent", weight: 4, aliases: ["multi agent", "multiagent"] },
-  { name: "mcp", weight: 4, aliases: ["model context protocol"] },
-  { name: "prompt engineering", weight: 3 },
-  { name: "openrouter", weight: 2 },
-  { name: "claude", weight: 2, aliases: ["claude ai", "anthropic"] },
-  { name: "copilot", weight: 1, aliases: ["github copilot"] },
-  { name: "perplexity", weight: 1 },
-  { name: "openclaw", weight: 1 },
-
-  // Intermediate
-  { name: "express.js", weight: 2, aliases: ["express"] },
-  // Skills match on whole tokens (see tokenPattern in score.ts), so "sql" no
-  // longer fires inside "postgresql" or "mysql". Those two are handled on
-  // purpose and differently:
-  //   - postgresql has its own weighted entry below, so crediting "sql" as
-  //     well would count one piece of evidence twice. Left unaliased.
-  //   - mysql has no entry of its own and is unambiguously SQL work, so it is
-  //     listed here rather than being silently dropped.
-  { name: "sql", weight: 2, aliases: ["mysql"] },
-  { name: "python", weight: 2 },
-  { name: "docker", weight: 2 },
-  { name: "aws s3", weight: 1 },
-  { name: "aws lambda", weight: 1, aliases: ["serverless"] },
-  { name: "iis", weight: 1 },
-  { name: "vitest", weight: 2, aliases: ["unit testing", "integration testing"] },
-  { name: "vector search", weight: 3, aliases: ["faiss", "pgvector", "vector database"] },
-  { name: "postgresql", weight: 2, aliases: ["postgres"] },
-  { name: "sqlite", weight: 1 },
-
-  // Beginner
-  { name: "react native", weight: 1 },
-  { name: "machine learning", weight: 1, aliases: ["ml"] },
-];
-
 // TIMELINE (confirmed by Ribhu, Aug 2026):
 //   Nature Technologies is the continuous full-time thread — SWE from Dec 2023
 //   to Jun 2024, promoted to M2 in Jul 2024, still there.
@@ -199,67 +131,25 @@ export const EDUCATION = {
   gpa: "7.83/10",
 };
 
-// Roles Ribhu is targeting - drives which job titles score highest.
-export const TARGET_ROLES = [
-  "full stack developer",
-  "full stack engineer",
-  "software engineer",
-  "frontend engineer",
-  "front end developer",
-  "react developer",
-  "next.js developer",
-  "node.js developer",
-  "flutter developer",
-  "ai engineer",
-  "agentic ai engineer",
-  "llm engineer",
-  "applied ai engineer",
-  "founding engineer",
-];
-
-// POLICY, not matching.
+// ---------------------------------------------------------------------------
+// Compatibility re-exports.
 //
-// Target roles are matched as an ordered subsequence of the title's words, so
-// "Software Sales Engineer" satisfies "software engineer" exactly the way
-// "Node.js Backend Developer" satisfies "node.js developer" - one interposed
-// word in both cases. No tokenising rule can separate them; the only thing
-// that distinguishes the two is knowing that "sales" is not an engineering
-// job. That is a judgement about which jobs Ribhu wants, so it lives here as
-// explicit policy rather than being smuggled into the matcher.
+// The skill list, target roles, veto phrases and contract keywords USED to be
+// defined in this file, which is what made "rank jobs against my resume"
+// impossible for anyone but Ribhu — one person's resume was compiled into the
+// program. They now live in ./taxonomy.ts as a shared dictionary, and a user's
+// own subset lives in ./profile.ts.
 //
-// Every phrase below names a role that speaks engineering vocabulary while not
-// being an engineering job. A veto phrase anywhere in the title is FATAL: the
-// job scores 0 and cannot clear any threshold, however much React its
-// description name-drops.
-//
-// It has to be fatal rather than a deduction. These postings never earned the
-// target-role bonus in the first place, so withholding it was a no-op for
-// exactly the titles this list exists to stop - a "Technical Recruiter" advert
-// listing React, TypeScript and Node.js scored 46 on skill evidence alone and
-// sailed into the apply queue. The skill words really are in the description;
-// they just do not make the role relevant.
-//
-// This list is intentionally narrow. Roles that are arguably engineering-
-// adjacent - Developer Advocate, QA Engineer, Technical Writer, Product
-// Manager, DevOps Engineer - are deliberately NOT here. Whether those are
-// worth applying to is the candidate's call, not this file's, and they are
-// left to score on their merits.
-//
-// Because a veto is fatal, the guarantee that it suppresses no entry in
-// TARGET_ROLES is load-bearing. Two tests enforce it.
-export const ROLE_VETO_PHRASES = [
-  "sales",
-  "marketing",
-  "recruiter",
-  "recruiting",
-  "account executive",
-  "business development",
-  "customer success",
-  "solutions consultant",
-];
-
-// Contract/freelance keywords used when scoring `leads`.
-export const CONTRACT_KEYWORDS = [
-  "react", "next.js", "nextjs", "typescript", "node", "flutter",
-  "ai agent", "llm", "rag", "chatbot", "automation", "mvp", "full stack",
-];
+// These aliases exist because lib/domain/drafting/compose.ts still writes in
+// Ribhu's voice — his name, links, experience and side project are woven
+// through every template — so it genuinely still wants the ORIGINAL profile,
+// not a viewer's. Per-user drafting is a separate change; until then, pointing
+// the old names at the default profile keeps one source of truth instead of
+// two lists drifting apart.
+// ---------------------------------------------------------------------------
+export {
+  DEFAULT_PROFILE_SKILLS as SKILLS,
+  DEFAULT_TARGET_ROLES as TARGET_ROLES,
+  ROLE_VETO_PHRASES,
+  CONTRACT_KEYWORDS,
+} from "./taxonomy";
