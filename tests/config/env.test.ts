@@ -30,14 +30,9 @@ describe("defaults", () => {
     expect(env.databaseUrl).toBe("file:./local.db");
   });
 
-  it("applies documented defaults", () => {
-    const env = getEnv();
-    expect(env.MATCH_THRESHOLD).toBe(40);
-    expect(env.FOLLOWUP_FIRST_DAYS).toBe(4);
-    expect(env.FOLLOWUP_FINAL_DAYS).toBe(10);
-    expect(env.OUTREACH_DAILY_CAP).toBe(10);
-    expect(env.WORKER_BATCH_SIZE).toBe(25);
-  });
+  // Operational defaults (MATCH_THRESHOLD, FOLLOWUP_*, WORKER_*, ...) moved to
+  // the runtime settings store and are covered in tests/config/settings.test.ts.
+  // This file now only guards what is genuinely secret or infrastructural.
 
   it("defaults DRY_RUN to false so an explicit opt-in is required to go live... and to stay safe", () => {
     // DRY_RUN defaults off, but every send path also requires real credentials,
@@ -47,20 +42,20 @@ describe("defaults", () => {
 });
 
 describe("boolean coercion", () => {
+  // DRY_RUN is the only boolean left in env, and it is the one that matters
+  // most: it is the deploy-level kill switch, and a spelling it fails to
+  // recognise reads as "sending is enabled".
   it("accepts the documented truthy spellings, not just '1'", () => {
-    // The bug this prevents: a source registry that reads a real boolean while
-    // a fetcher separately checks `=== "1"`. ENABLE_X=true then enables the
-    // source and silently yields nothing.
     for (const value of ["1", "true", "TRUE", "yes", "on", " true "]) {
-      setEnv({ ENABLE_LINKEDIN_ALERTS: value });
-      expect(getEnv().ENABLE_LINKEDIN_ALERTS, `for ${JSON.stringify(value)}`).toBe(true);
+      setEnv({ DRY_RUN: value });
+      expect(getEnv().DRY_RUN, `for ${JSON.stringify(value)}`).toBe(true);
     }
   });
 
   it("treats anything else as false", () => {
     for (const value of ["0", "false", "no", "off", "", "banana"]) {
-      setEnv({ ENABLE_LINKEDIN_ALERTS: value });
-      expect(getEnv().ENABLE_LINKEDIN_ALERTS, `for ${JSON.stringify(value)}`).toBe(false);
+      setEnv({ DRY_RUN: value });
+      expect(getEnv().DRY_RUN, `for ${JSON.stringify(value)}`).toBe(false);
     }
   });
 });
@@ -84,18 +79,8 @@ describe("validation", () => {
     expect(getEnvSafe().ok).toBe(true);
   });
 
-  it("rejects a final follow-up scheduled before the first", () => {
-    // Otherwise both fire in the same run and one person gets two emails at once.
-    setEnv({ FOLLOWUP_FIRST_DAYS: "10", FOLLOWUP_FINAL_DAYS: "4" });
-    const result = getEnvSafe();
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.issues.join()).toMatch(/FOLLOWUP_FINAL_DAYS/);
-  });
-
-  it("rejects equal follow-up offsets", () => {
-    setEnv({ FOLLOWUP_FIRST_DAYS: "5", FOLLOWUP_FINAL_DAYS: "5" });
-    expect(getEnvSafe().ok).toBe(false);
-  });
+  // The follow-up ordering rule moved with the settings it validates; it is now
+  // a save-time message rather than a startup crash. See settings.test.ts.
 
   it("rejects a short APP_PASSWORD", () => {
     setEnv({ APP_PASSWORD: "short" });
@@ -104,9 +89,12 @@ describe("validation", () => {
     if (!result.ok) expect(result.issues.join()).toMatch(/APP_PASSWORD/);
   });
 
-  it("rejects an out-of-range threshold", () => {
-    setEnv({ MATCH_THRESHOLD: "500" });
-    expect(getEnvSafe().ok).toBe(false);
+  it("rejects a short ENCRYPTION_KEY", () => {
+    // Too short to be a real generated key, so almost certainly a placeholder.
+    setEnv({ ENCRYPTION_KEY: "not-long-enough" });
+    const result = getEnvSafe();
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.issues.join()).toMatch(/ENCRYPTION_KEY/);
   });
 });
 
@@ -130,16 +118,16 @@ describe("accessor contract", () => {
   });
 
   it("getEnv throws, naming every bad key at once", () => {
-    setEnv({ APP_PASSWORD: "short", MATCH_THRESHOLD: "999" });
+    setEnv({ APP_PASSWORD: "short", ENCRYPTION_KEY: "tiny" });
     expect(() => getEnv()).toThrow(/APP_PASSWORD/);
-    expect(() => getEnv()).toThrow(/MATCH_THRESHOLD/);
+    expect(() => getEnv()).toThrow(/ENCRYPTION_KEY/);
   });
 
   it("memoises until the cache is reset", () => {
     const first = getEnv();
-    process.env.MATCH_THRESHOLD = "77";
+    process.env.CRON_SECRET = "a-new-secret";
     expect(getEnv()).toBe(first); // same object, stale by design
     resetEnvCache();
-    expect(getEnv().MATCH_THRESHOLD).toBe(77);
+    expect(getEnv().CRON_SECRET).toBe("a-new-secret");
   });
 });

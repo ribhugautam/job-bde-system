@@ -1,5 +1,6 @@
 import { ImapFlow } from "imapflow";
 import { getEnv } from "@/lib/config/env";
+import type { Settings } from "@/lib/config/settings";
 
 // ---------------------------------------------------------------------------
 // Shared, STRICTLY READ-ONLY IMAP access to your own mailbox.
@@ -32,13 +33,18 @@ export type ImapSettings = {
 };
 
 /**
- * Resolves IMAP settings from the validated env.
+ * Resolves IMAP connection details.
+ *
+ * Split across both config layers, deliberately: host, port and mailbox are
+ * harmless and live in runtime settings, while the credentials stay in env.
+ * Passing the settings in rather than reading them keeps this synchronous and
+ * keeps the caller in charge of when the settings row is read.
  *
  * IMAP_USER / IMAP_PASSWORD fall back to GMAIL_USER / GMAIL_APP_PASSWORD: the
  * app password already used for sending also authenticates IMAP, so a single
  * credential pair covers both directions.
  */
-export function getImapSettings(): ImapSettings {
+export function getImapSettings(settings: Settings): ImapSettings {
   const env = getEnv();
   const user = env.IMAP_USER ?? env.GMAIL_USER;
   const pass = env.IMAP_PASSWORD ?? env.GMAIL_APP_PASSWORD;
@@ -49,9 +55,9 @@ export function getImapSettings(): ImapSettings {
     );
   }
   return {
-    host: env.IMAP_HOST,
-    port: env.IMAP_PORT,
-    mailbox: env.IMAP_MAILBOX,
+    host: settings.IMAP_HOST,
+    port: settings.IMAP_PORT,
+    mailbox: settings.IMAP_MAILBOX,
     user,
     pass,
   };
@@ -66,15 +72,18 @@ export function getImapSettings(): ImapSettings {
  * and fully consume any `client.fetch()` iterator before returning.
  */
 export async function withMailbox<T>(
+  // Settings first, so every caller is forced to say which configuration it is
+  // connecting under rather than reaching for an ambient one.
+  settings: Settings,
   fn: (client: ImapFlow) => Promise<T>,
   opts: { mailbox?: string } = {}
 ): Promise<T> {
-  const settings = getImapSettings();
+  const imap = getImapSettings(settings);
   const client = new ImapFlow({
-    host: settings.host,
-    port: settings.port,
+    host: imap.host,
+    port: imap.port,
     secure: true,
-    auth: { user: settings.user, pass: settings.pass },
+    auth: { user: imap.user, pass: imap.pass },
     logger: false,
   });
 
@@ -88,7 +97,7 @@ export async function withMailbox<T>(
   }
 
   try {
-    const lock = await client.getMailboxLock(opts.mailbox ?? settings.mailbox, {
+    const lock = await client.getMailboxLock(opts.mailbox ?? imap.mailbox, {
       readOnly: true,
     });
     try {

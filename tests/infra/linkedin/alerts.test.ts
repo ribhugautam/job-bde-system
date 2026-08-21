@@ -4,7 +4,8 @@ import { fileURLToPath } from "node:url";
 import * as cheerio from "cheerio";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { deriveArrangement } from "@/lib/domain/facts";
-import { getEnv, resetEnvCache } from "@/lib/config/env";
+import { resetEnvCache } from "@/lib/config/env";
+import { defaultSettings } from "@/lib/config/settings";
 import {
   BADGE_LINE_PATTERNS,
   fetchLinkedInAlerts,
@@ -33,40 +34,42 @@ afterEach(() => {
 });
 
 // ---------------------------------------------------------------------------
-// The enable flag used to be compared against the literal string "1" here
-// while the source registry gated on the validated boolean from getEnv().
-// ENABLE_LINKEDIN_ALERTS=true therefore enabled the source in the registry and
-// then returned zero jobs from this module - a source that looks switched on
-// and silently produces nothing. Both sides now read the same accessor.
+// The enable flag used to be compared against the literal string "1" here while
+// the source registry gated on the validated boolean from getEnv(), so
+// ENABLE_LINKEDIN_ALERTS=true enabled the source in the registry and then
+// returned zero jobs from this module — a source that looks switched on and
+// silently produces nothing.
+//
+// That whole class of bug is now structurally impossible: the flag arrives as a
+// real boolean on the settings object, and no string coercion happens anywhere
+// near this code. (The one place a string is still coerced is seeding the
+// settings row from env, covered in tests/config/settings.test.ts.) What is
+// left worth pinning is that this module honours the boolean it is handed.
 // ---------------------------------------------------------------------------
 describe("fetchLinkedInAlerts - the enable flag", () => {
-  it("accepts every truthy spelling getEnv() accepts, not just \"1\"", async () => {
-    for (const value of ["1", "true", "yes", "on", "TRUE", "  yes  "]) {
-      vi.stubEnv("ENABLE_LINKEDIN_ALERTS", value);
-      vi.stubEnv("IMAP_USER", "");
-      vi.stubEnv("IMAP_PASSWORD", "");
-      vi.stubEnv("GMAIL_USER", "");
-      vi.stubEnv("GMAIL_APP_PASSWORD", "");
-      resetEnvCache();
+  it("reaches IMAP when the setting is on", async () => {
+    vi.stubEnv("IMAP_USER", "");
+    vi.stubEnv("IMAP_PASSWORD", "");
+    vi.stubEnv("GMAIL_USER", "");
+    vi.stubEnv("GMAIL_APP_PASSWORD", "");
+    resetEnvCache();
 
-      expect(getEnv().ENABLE_LINKEDIN_ALERTS, `for value "${value}"`).toBe(true);
-      // Getting past the flag means reaching the credentials check. Without
-      // credentials that throws, which is exactly how we know the source was
-      // enabled rather than silently short-circuited to [].
-      await expect(fetchLinkedInAlerts()).rejects.toThrow(/no IMAP credentials/i);
-    }
+    // Getting past the flag means reaching the credentials check. Without
+    // credentials that throws, which is exactly how we know the source was
+    // enabled rather than silently short-circuited to [].
+    await expect(
+      fetchLinkedInAlerts({ ...defaultSettings(), ENABLE_LINKEDIN_ALERTS: true })
+    ).rejects.toThrow(/no IMAP credentials/i);
   });
 
-  it("stays off when unset or explicitly disabled, without touching IMAP", async () => {
-    for (const value of [undefined, "", "0", "false", "no", "off"]) {
-      // undefined deletes the key, so this holds even on a machine that has
-      // the flag exported in its shell.
-      vi.stubEnv("ENABLE_LINKEDIN_ALERTS", value);
-      resetEnvCache();
+  it("stays off without touching IMAP when the setting is off", async () => {
+    await expect(
+      fetchLinkedInAlerts({ ...defaultSettings(), ENABLE_LINKEDIN_ALERTS: false })
+    ).resolves.toEqual([]);
+  });
 
-      expect(getEnv().ENABLE_LINKEDIN_ALERTS, `for value "${value}"`).toBe(false);
-      await expect(fetchLinkedInAlerts()).resolves.toEqual([]);
-    }
+  it("is off by default", async () => {
+    await expect(fetchLinkedInAlerts(defaultSettings())).resolves.toEqual([]);
   });
 });
 

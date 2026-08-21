@@ -4,6 +4,7 @@ import { drizzle } from "drizzle-orm/libsql";
 import { migrate } from "drizzle-orm/libsql/migrator";
 import { eq } from "drizzle-orm";
 import { getEnv, resetEnvCache } from "@/lib/config/env";
+import { defaultSettings } from "@/lib/config/settings";
 import { createDeadline } from "@/lib/pipeline/deadline";
 import { emptyCounters, type StageContext } from "@/lib/pipeline/context";
 import { runEnrich } from "@/lib/pipeline/stages/enrich";
@@ -36,7 +37,10 @@ async function buildCtx(): Promise<{ ctx: StageContext; db: StageContext["db"] }
   resetEnvCache();
   const ctx: StageContext = {
     db,
-    env: getEnv(),
+    // Secrets from env, operational values from the settings defaults. Built
+    // here rather than via getAppConfig() so the fixture stays synchronous and
+    // touches no settings row.
+    config: { ...getEnv(), ...defaultSettings(), dryRun: false, settingsConfigured: false },
     deadline: createDeadline(60_000),
     counters: emptyCounters(),
     errors: [],

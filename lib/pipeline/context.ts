@@ -1,4 +1,4 @@
-import type { Env } from "@/lib/config/env";
+import type { AppConfig } from "@/lib/config/app-config";
 import type { Deadline } from "./deadline";
 import { getDb } from "@/lib/infra/db/client";
 import type { SenderIdentity } from "@/lib/infra/db/user-mail";
@@ -42,7 +42,17 @@ export function emptyCounters(): Counters {
 
 export type StageContext = {
   db: Db;
-  env: Env;
+  /**
+   * Secrets AND runtime settings, resolved once at the start of the run.
+   *
+   * Named `config` rather than `env` deliberately: most of what a stage reads
+   * from it now comes from the database, and `ctx.env.MATCH_THRESHOLD` would
+   * send a reader to Vercel looking for a value that is not there.
+   *
+   * Read `config.dryRun`, never `config.DRY_RUN` -- only the former combines
+   * the settings toggle with the deploy-level env override.
+   */
+  config: AppConfig;
   deadline: Deadline;
 
   /**

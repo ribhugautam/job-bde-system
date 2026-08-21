@@ -257,6 +257,38 @@ export const jobs = sqliteTable(
 );
 
 // ---------------------------------------------------------------------------
+// RUNTIME SETTINGS — one row, the whole operational configuration.
+//
+// These were environment variables. Changing one meant a Vercel edit and a
+// redeploy, which is slow enough that nothing ever got tuned, and their bulk
+// buried the values in .env that genuinely are secret.
+//
+// A SINGLETON (id = 1), not key/value rows, because settings validate as a SET:
+// FOLLOWUP_FINAL_DAYS > FOLLOWUP_FIRST_DAYS is a rule about two of them
+// together. One row means one read, one write, and no way for a partial update
+// to leave the pair inconsistent.
+//
+// A JSON blob, not typed columns, so adding a setting needs no migration and
+// the same zod schema validates the stored value that validates everything
+// else. See lib/config/settings.ts, where parsing is total: a corrupted row
+// degrades to defaults rather than breaking the page an admin would use to fix
+// it.
+//
+// NOTHING SECRET GOES IN HERE. Credentials stay in env, or encrypted in
+// user_mail.
+// ---------------------------------------------------------------------------
+export const appSettings = sqliteTable("app_settings", {
+  /** Always 1. The row is a singleton; the key exists to make that enforceable. */
+  id: integer("id").primaryKey(),
+  values: text("values", { mode: "json" }).$type<Record<string, unknown>>(),
+  /** Who last changed it — DRY_RUN in particular is worth being able to trace. */
+  updatedByUserId: integer("updated_by_user_id"),
+  updatedAt: integer("updated_at", { mode: "timestamp" }).default(
+    sql`(unixepoch())`
+  ),
+});
+
+// ---------------------------------------------------------------------------
 // PER-USER SENDING IDENTITY.
 //
 // Before this, every email left through one GMAIL_USER mailbox and was signed

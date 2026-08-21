@@ -1,4 +1,4 @@
-import { getEnv } from "@/lib/config/env";
+import { getAppConfig } from "@/lib/config/app-config";
 import { getDb, schema } from "@/lib/infra/db/client";
 import { getOwnerUserId } from "@/lib/infra/db/users";
 import { getOwnerSenderIdentity } from "@/lib/infra/db/user-mail";
@@ -61,9 +61,9 @@ const DRAIN_STAGES: ReadonlyArray<{ name: string; run: Stage }> = [
  * designed to be *fast* under concurrency, and the cron only ever fires one.
  */
 export async function runWorker(): Promise<RunSummary> {
-  const env = getEnv();
+  const config = await getAppConfig();
   const db = getDb();
-  const deadline: Deadline = createDeadline(env.WORKER_TIME_BUDGET_MS);
+  const deadline: Deadline = createDeadline(config.WORKER_TIME_BUDGET_MS);
 
   // Resolved once per run rather than per send: it is the same answer every
   // time, and a run that cannot send at all should say so once in the digest
@@ -73,7 +73,7 @@ export async function runWorker(): Promise<RunSummary> {
 
   const ctx: StageContext = {
     db,
-    env,
+    config,
     deadline,
     sender,
     ownerUserId,
@@ -197,7 +197,7 @@ export async function runWorker(): Promise<RunSummary> {
   }
 
   return {
-    dryRun: env.DRY_RUN,
+    dryRun: config.dryRun,
     counters: ctx.counters,
     errors: ctx.errors,
     notices: ctx.notices,

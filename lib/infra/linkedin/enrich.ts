@@ -1,5 +1,5 @@
 import * as cheerio from "cheerio";
-import { getEnv } from "@/lib/config/env";
+import type { Settings } from "@/lib/config/settings";
 
 // ---------------------------------------------------------------------------
 // Recovering the missing job description for LinkedIn alert jobs.
@@ -284,25 +284,30 @@ export function sleep(ms: number): Promise<void> {
 }
 
 /** The configured gap between two page fetches, in milliseconds. */
-export function enrichDelayMs(): number {
-  return getEnv().LINKEDIN_ENRICH_DELAY_MS;
+export function enrichDelayMs(settings: Settings): number {
+  return settings.LINKEDIN_ENRICH_DELAY_MS;
 }
 
 /** `await enrichDelay()` between fetches - never fetch two pages back to back. */
-export function enrichDelay(): Promise<void> {
-  return sleep(enrichDelayMs());
+export function enrichDelay(settings: Settings): Promise<void> {
+  return sleep(enrichDelayMs(settings));
 }
 
-/** Everything the calling pipeline stage needs to decide whether and how much. */
-export function enrichSettings(): {
+/**
+ * Everything the calling pipeline stage needs to decide whether and how much.
+ *
+ * Takes settings rather than reading them, so this stays synchronous and the
+ * stage keeps control of when the settings row is loaded -- once per run, not
+ * once per job.
+ */
+export function enrichSettings(settings: Settings): {
   enabled: boolean;
   dailyCap: number;
   delayMs: number;
 } {
-  const env = getEnv();
   return {
-    enabled: env.ENABLE_LINKEDIN_ENRICH,
-    dailyCap: env.LINKEDIN_ENRICH_DAILY_CAP,
-    delayMs: env.LINKEDIN_ENRICH_DELAY_MS,
+    enabled: settings.ENABLE_LINKEDIN_ENRICH,
+    dailyCap: settings.LINKEDIN_ENRICH_DAILY_CAP,
+    delayMs: settings.LINKEDIN_ENRICH_DELAY_MS,
   };
 }

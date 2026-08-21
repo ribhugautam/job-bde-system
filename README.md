@@ -65,7 +65,7 @@ behavior this system had before enrichment existed.
   Unambiguously non-engineering titles (sales, marketing, recruiting, account executive, customer
   success, solutions consultant) are excluded by `ROLE_VETO_PHRASES`. Add to that list as you see
   real results.
-- **Don't lower `MATCH_THRESHOLD` below 40 without measuring.** It looks like there is empty space
+- **Don't lower the match threshold below 40 without measuring** (Settings → Matching). It looks like there is empty space
   between the noise and the targets; there isn't. The 29–46 band is densely filled with
   tech-adjacent roles. Dropping to 30 was measured as admitting 3 real targets and 6 irrelevant
   ones. The reasoning and the full score table are in
@@ -250,6 +250,35 @@ person's applications are drafted and queued for one-click sending. Nothing can
 go out under the wrong name — `sendMail()` requires an explicit sender and has no
 fallback address.
 
+## Where configuration lives
+
+Two places, and the split is deliberate:
+
+- **`.env`** — secrets, infrastructure, and anything read before a database
+  connection exists. About 15 variables. See `.env.example`.
+- **Settings → Pipeline settings** — everything operational: match threshold,
+  which sources run, follow-up cadence, worker limits, staleness window. Admin
+  only, changeable without a redeploy.
+
+These used to all be environment variables, which meant a Vercel edit and a
+deploy to change a number — slow enough that nothing ever got tuned.
+
+`npm run db:migrate` **seeds the settings row from your current environment**, so
+deploying this changes nothing about how the pipeline behaves. Those variables
+are then ignored, and the settings page lists any that are still set so you can
+delete them.
+
+One exception. `DRY_RUN` exists in both places, and env can only ever force it
+**on**:
+
+```
+effective dry run = DRY_RUN in env  OR  the Settings toggle
+```
+
+The toggle gives one-click control day to day. `DRY_RUN=1` in the environment is
+a deploy-level stop that no dashboard session can undo — including one belonging
+to an admin who has been compromised, or who clicked the wrong thing.
+
 ## How the job list works
 
 There are no filters. The list is ranked against **your** resume, and split into
@@ -264,7 +293,7 @@ three piles:
 Everyone shares the same pool of ingested jobs, but triage is private: a
 colleague dismissing a job never hides it from you.
 
-Untriaged jobs leave the Inbox after `JOB_STALE_DAYS` (default 30). Nothing is
+Untriaged jobs leave the Inbox after the staleness window (Settings → Matching, default 30 days). Nothing is
 deleted and nothing is written when you change that number — staleness is
 computed when the page is read, so raising or lowering it reflows every pile
 instantly and reversibly.
@@ -350,6 +379,9 @@ npm run db:migrate
 npm run smoke
 ```
 
-Set `DRY_RUN=1` to run the full pipeline — fetching, scoring, drafting, everything written to the
-dashboard — while sending zero email, including the digest. Leave it on until you have read a few
-generated drafts.
+Leave **dry run** on (Settings → Sending) until you have read a few generated drafts: the full
+pipeline runs — fetching, scoring, drafting, everything written to the dashboard — while sending
+zero email, including the digest.
+
+`DRY_RUN=1` in the environment does the same thing but cannot be switched off from the dashboard.
+Use the toggle day to day; use the variable when you want a stop nobody can lift.

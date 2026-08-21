@@ -39,11 +39,11 @@ function startOfToday(): Date {
 }
 
 export async function runEnrich(ctx: StageContext): Promise<StageResult> {
-  const limit = ctx.env.WORKER_BATCH_SIZE;
+  const limit = ctx.config.WORKER_BATCH_SIZE;
   const jobs = await claimJobs(ctx, "enrich", limit);
   if (jobs.length === 0) return { processed: 0, hasMore: false };
 
-  const settings = enrichSettings();
+  const settings = enrichSettings(ctx.config);
   let processed = 0;
 
   // Enrichment off: pass everything straight through to scoring rather than

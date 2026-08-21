@@ -1,4 +1,5 @@
 import { getEnv } from "@/lib/config/env";
+import type { Settings } from "@/lib/config/settings";
 import type { RawJob, RawLead } from "./types";
 import { fetchRemoteOk } from "./remoteok";
 import { fetchRemotive } from "./remotive";
@@ -65,10 +66,21 @@ export type SourceDefinition<T> = {
    * before it would ever reach this, and reports an active source missing a
    * fetcher as an error rather than crashing the run.
    */
-  fetch?: () => Promise<T[]>;
-  /** Evaluated per run, reads getEnv() — so a flag flip takes effect without a redeploy. */
-  enabled: () => boolean;
-  /** Why a source is off, surfaced in the dashboard/digest instead of it silently vanishing. */
+  fetch?: (settings: Settings) => Promise<T[]>;
+  /**
+   * Evaluated per run against the run's settings.
+   *
+   * Takes settings rather than reading them, which is what makes a flag flip
+   * take effect on the next run with no redeploy AND makes this testable
+   * without mutating process.env -- the registry test used to save and restore
+   * six variables around every single case.
+   */
+  enabled: (settings: Settings) => boolean;
+  /**
+   * Why a source is off, surfaced in the dashboard/digest instead of it
+   * silently vanishing. Only consulted when enabled() has already returned
+   * false, so it never needs to re-check the flag itself.
+   */
   disabledReason?: () => string | undefined;
   /** Set when the upstream is permanently gone. Overrides `enabled()` entirely. */
   retired?: RetirementNotice;
@@ -126,12 +138,10 @@ export const JOB_SOURCES: SourceDefinition<RawJob>[] = [
     name: "linkedin_alert",
     kind: "job",
     fetch: fetchLinkedInAlerts,
-    enabled: () => getEnv().ENABLE_LINKEDIN_ALERTS,
+    enabled: (s) => s.ENABLE_LINKEDIN_ALERTS,
     disabledReason: () =>
-      getEnv().ENABLE_LINKEDIN_ALERTS
-        ? undefined
-        : "set ENABLE_LINKEDIN_ALERTS=1 to enable (needs IMAP_USER/IMAP_PASSWORD, " +
-          "or the existing GMAIL_USER/GMAIL_APP_PASSWORD)",
+      "switch it on under Settings -> Sources (needs IMAP_USER/IMAP_PASSWORD, " +
+      "or the existing GMAIL_USER/GMAIL_APP_PASSWORD)",
   },
   {
     // Reads your own inbox over IMAP, read-only. Same approach as
@@ -139,24 +149,20 @@ export const JOB_SOURCES: SourceDefinition<RawJob>[] = [
     // scraped from a logged-in surface.
     name: "wellfound_alert",
     kind: "job",
-    fetch: () => fetchAlertSource(WELLFOUND_ALERTS),
-    enabled: () => getEnv().ENABLE_WELLFOUND_ALERTS,
+    fetch: (s) => fetchAlertSource(WELLFOUND_ALERTS, s),
+    enabled: (s) => s.ENABLE_WELLFOUND_ALERTS,
     disabledReason: () =>
-      getEnv().ENABLE_WELLFOUND_ALERTS
-        ? undefined
-        : "set ENABLE_WELLFOUND_ALERTS=1 to enable (needs IMAP_USER/IMAP_PASSWORD, " +
-          "or the existing GMAIL_USER/GMAIL_APP_PASSWORD)",
+      "switch it on under Settings -> Sources (needs IMAP_USER/IMAP_PASSWORD, " +
+      "or the existing GMAIL_USER/GMAIL_APP_PASSWORD)",
   },
   {
     name: "indeed_alert",
     kind: "job",
-    fetch: () => fetchAlertSource(INDEED_ALERTS),
-    enabled: () => getEnv().ENABLE_INDEED_ALERTS,
+    fetch: (s) => fetchAlertSource(INDEED_ALERTS, s),
+    enabled: (s) => s.ENABLE_INDEED_ALERTS,
     disabledReason: () =>
-      getEnv().ENABLE_INDEED_ALERTS
-        ? undefined
-        : "set ENABLE_INDEED_ALERTS=1 to enable (needs IMAP_USER/IMAP_PASSWORD, " +
-          "or the existing GMAIL_USER/GMAIL_APP_PASSWORD)",
+      "switch it on under Settings -> Sources (needs IMAP_USER/IMAP_PASSWORD, " +
+      "or the existing GMAIL_USER/GMAIL_APP_PASSWORD)",
   },
   {
     // Public, unauthenticated page. No key, no account, always on.

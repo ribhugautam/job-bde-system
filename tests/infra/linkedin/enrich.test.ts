@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { resetEnvCache } from "@/lib/config/env";
+import { defaultSettings } from "@/lib/config/settings";
 import {
   enrichDelayMs,
   enrichSettings,
@@ -63,7 +63,6 @@ afterEach(() => {
   vi.unstubAllGlobals();
   vi.unstubAllEnvs();
   vi.restoreAllMocks();
-  resetEnvCache();
 });
 
 describe("extractJobId", () => {
@@ -382,24 +381,27 @@ describe("fetchJobDescription - failures never escape", () => {
 });
 
 describe("pacing configuration", () => {
-  it("reads the delay and cap from the env module, not process.env directly", () => {
-    vi.stubEnv("LINKEDIN_ENRICH_DELAY_MS", "250");
-    vi.stubEnv("LINKEDIN_ENRICH_DAILY_CAP", "5");
-    vi.stubEnv("ENABLE_LINKEDIN_ENRICH", "0");
-    resetEnvCache();
+  // These now take the run's settings rather than reaching for ambient env, so
+  // the test states the configuration directly instead of mutating the process
+  // and hoping the memoised env cache was reset.
+  it("reads the delay and cap from the settings it is handed", () => {
+    const settings = {
+      ...defaultSettings(),
+      LINKEDIN_ENRICH_DELAY_MS: 250,
+      LINKEDIN_ENRICH_DAILY_CAP: 5,
+      ENABLE_LINKEDIN_ENRICH: false,
+    };
 
-    // getEnv() coerces, so these are real numbers/booleans, not strings.
-    expect(enrichDelayMs()).toBe(250);
-    expect(enrichSettings()).toEqual({
+    expect(enrichDelayMs(settings)).toBe(250);
+    expect(enrichSettings(settings)).toEqual({
       enabled: false,
       dailyCap: 5,
       delayMs: 250,
     });
   });
 
-  it("falls back to the configured defaults when nothing is set", () => {
-    resetEnvCache();
-    expect(enrichSettings()).toEqual({
+  it("falls back to the configured defaults", () => {
+    expect(enrichSettings(defaultSettings())).toEqual({
       enabled: true,
       dailyCap: 80,
       delayMs: 1500,

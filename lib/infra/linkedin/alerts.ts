@@ -1,7 +1,7 @@
 import { simpleParser } from "mailparser";
 import * as cheerio from "cheerio";
 import { RawJob } from "../sources/types";
-import { getEnv } from "@/lib/config/env";
+import type { Settings } from "@/lib/config/settings";
 import { withMailbox } from "@/lib/infra/mail/imap";
 import { deriveArrangement, type WorkArrangement } from "@/lib/domain/facts";
 
@@ -485,15 +485,16 @@ export function repairMangledCard(storedTitle: string): {
   };
 }
 
-export async function fetchLinkedInAlerts(): Promise<RawJob[]> {
-  const env = getEnv();
-  if (!env.ENABLE_LINKEDIN_ALERTS) return [];
+export async function fetchLinkedInAlerts(settings: Settings): Promise<RawJob[]> {
+  if (!settings.ENABLE_LINKEDIN_ALERTS) return [];
 
-  const since = new Date(Date.now() - env.LINKEDIN_ALERT_DAYS * 24 * 60 * 60 * 1000);
+  const since = new Date(
+    Date.now() - settings.LINKEDIN_ALERT_DAYS * 24 * 60 * 60 * 1000
+  );
   const out: RawJob[] = [];
   const seen = new Set<string>();
 
-  await withMailbox(async (client) => {
+  await withMailbox(settings, async (client) => {
     for await (const msg of client.fetch(
       { since, from: "linkedin.com" },
       { source: true }

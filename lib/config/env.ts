@@ -2,7 +2,24 @@ import { z } from "zod";
 import { MIN_PASSWORD_LENGTH, MIN_SECRET_LENGTH } from "./auth-policy";
 
 // ---------------------------------------------------------------------------
-// The single place process.env is read.
+// The single place process.env is read — and, now, SECRETS ONLY.
+//
+// This file used to hold 35 variables. Twenty of them were operational tuning
+// (match threshold, source toggles, follow-up cadence, worker limits), and
+// changing any one meant editing Vercel and redeploying. That was slow enough
+// that nothing ever got tuned, and their bulk buried the values that genuinely
+// are secret. Those twenty now live in the database — see
+// lib/config/settings.ts and lib/infra/db/settings.ts.
+//
+// THE TEST FOR WHETHER SOMETHING BELONGS HERE:
+//
+//   1. Would leaking it be harmful?                          -> here
+//   2. Is it needed BEFORE a database connection exists?     -> here
+//      (auth gate, the database URL itself, the cron secret)
+//   3. Is it inlined at build time by Next?                  -> here
+//      (NEXT_PUBLIC_APP_URL — it physically cannot come from a row)
+//
+// Anything else is a setting, and putting it here is a regression.
 //
 // Two accessors, deliberately:
 //
@@ -21,30 +38,6 @@ import { MIN_PASSWORD_LENGTH, MIN_SECRET_LENGTH } from "./auth-policy";
 // `process.env[name]` lookup is not substituted in bundled contexts.
 // ---------------------------------------------------------------------------
 
-/** "1"/"true"/"yes" -> true. Anything else (including unset) -> false. */
-const boolFlag = (fallback = false) =>
-  z
-    .string()
-    .optional()
-    .transform((v) =>
-      v === undefined || v.trim() === ""
-        ? fallback
-        : ["1", "true", "yes", "on"].includes(v.trim().toLowerCase())
-    );
-
-const intWithDefault = (fallback: number, min?: number, max?: number) =>
-  z
-    .string()
-    .optional()
-    .transform((v) => (v === undefined || v.trim() === "" ? fallback : Number(v)))
-    .pipe(
-      z
-        .number()
-        .int()
-        .min(min ?? Number.MIN_SAFE_INTEGER)
-        .max(max ?? Number.MAX_SAFE_INTEGER)
-    );
-
 const optionalStr = z
   .string()
   .optional()
@@ -53,14 +46,17 @@ const optionalStr = z
 const schema = z.object({
   // --- Database ------------------------------------------------------------
   // Unset -> local ./local.db SQLite file. The remote-URL-without-token case is
-  // caught by the superRefine below rather than here, so the error names both
-  // keys at once.
+  // caught below rather than here, so the error names both keys at once.
   TURSO_DATABASE_URL: optionalStr,
   TURSO_AUTH_TOKEN: optionalStr,
 
   // --- Outbound mail -------------------------------------------------------
+  // Legacy/fallback sender. Each user now stores their own mailbox (encrypted,
+  // in user_mail); these remain for the unattended pipeline and for a
+  // deployment that has not set anybody up yet.
   GMAIL_USER: optionalStr,
   GMAIL_APP_PASSWORD: optionalStr,
+  // Also read directly by the first-admin seed, before any account exists.
   OWNER_EMAIL: optionalStr,
 
   // --- Dashboard auth ------------------------------------------------------
@@ -87,11 +83,10 @@ const schema = z.object({
    * Encrypts colleagues' stored mailbox passwords at rest.
    *
    * SEPARATE FROM AUTH_SECRET on purpose. AUTH_SECRET signs session cookies and
-   * is expected to be rotated -- the docs already say rotating it signs
-   * everyone out, which is cheap and recoverable. If it also encrypted
-   * credentials, that same rotation would silently destroy every stored
-   * mailbox password, and the damage would surface days later as applications
-   * quietly failing to send.
+   * is expected to be rotated — the docs already say rotating it signs everyone
+   * out, which is cheap and recoverable. If it also encrypted credentials, that
+   * same rotation would silently destroy every stored mailbox password, and the
+   * damage would surface days later as applications quietly failing to send.
    *
    * Optional: without it, mailbox setup is refused outright and everything is
    * drafted and queued instead. Nothing falls back to storing a plaintext
@@ -106,59 +101,36 @@ const schema = z.object({
   CRON_SECRET: optionalStr,
 
   // --- Safety --------------------------------------------------------------
-  // The master kill switch: drafts everything, sends nothing, not even digests.
-  DRY_RUN: boolFlag(false),
-
-  // --- Matching ------------------------------------------------------------
-  MATCH_THRESHOLD: intWithDefault(40, 0, 100),
-
   /**
-   * How long an untriaged job stays in the inbox before it moves to archive.
+   * The deploy-level kill switch.
    *
-   * An env var rather than a constant because it is a judgement about a market,
-   * not about the code: how long a posting stays genuinely open varies, and the
-   * right number is whatever stops you triaging jobs that were filled weeks
-   * ago. Nothing is deleted and nothing is written when this changes -- staleness
-   * is a read-time date comparison, so raising or lowering it reflows every
-   * bucket instantly and reversibly.
+   * DRY_RUN is now a settings toggle, but this env var remains and it can only
+   * ever force dry-run ON — see effectiveDryRun() in lib/config/settings.ts.
+   * That asymmetry is the point: the toggle gives day-to-day control, while
+   * setting this to 1 is a stop that no dashboard session can undo, including
+   * one belonging to an admin who has been compromised or clicked the wrong
+   * thing.
    */
-  JOB_STALE_DAYS: intWithDefault(30, 1, 365),
+  DRY_RUN: z
+    .string()
+    .optional()
+    .transform((v) =>
+      v === undefined || v.trim() === ""
+        ? false
+        : ["1", "true", "yes", "on"].includes(v.trim().toLowerCase())
+    ),
 
-  // --- LinkedIn ingest (own inbox, IMAP, read-only) ------------------------
-  ENABLE_LINKEDIN_ALERTS: boolFlag(false),
-  ENABLE_WELLFOUND_ALERTS: boolFlag(false),
-  ENABLE_INDEED_ALERTS: boolFlag(false),
-  IMAP_HOST: z.string().optional().default("imap.gmail.com"),
-  IMAP_PORT: intWithDefault(993, 1, 65535),
-  IMAP_MAILBOX: z.string().optional().default("INBOX"),
+  // --- IMAP credentials ----------------------------------------------------
+  // Host, port and mailbox are settings; only the credentials live here.
   IMAP_USER: optionalStr,
   IMAP_PASSWORD: optionalStr,
-  LINKEDIN_ALERT_DAYS: intWithDefault(3, 1, 30),
 
-  // --- LinkedIn enrichment (unauthenticated public job page) ---------------
-  // No login, no cookie, no session. Capped and spaced so a run cannot turn
-  // into a burst; on 429/403 the job simply stays sparse.
-  ENABLE_LINKEDIN_ENRICH: boolFlag(true),
-  LINKEDIN_ENRICH_DAILY_CAP: intWithDefault(80, 0, 500),
-  LINKEDIN_ENRICH_DELAY_MS: intWithDefault(1500, 0, 60_000),
-
-  // --- Follow-ups ----------------------------------------------------------
-  ENABLE_FOLLOWUPS: boolFlag(true),
-  FOLLOWUP_FIRST_DAYS: intWithDefault(4, 1, 60),
-  FOLLOWUP_FINAL_DAYS: intWithDefault(10, 2, 120),
-  FOLLOWUP_DAILY_CAP: intWithDefault(20, 0, 200),
-
-  // --- Worker --------------------------------------------------------------
-  // Budget must stay under the route's maxDuration with room for the digest.
-  WORKER_TIME_BUDGET_MS: intWithDefault(45_000, 1_000, 800_000),
-  WORKER_BATCH_SIZE: intWithDefault(25, 1, 500),
-
-  // --- Optional sources / providers ---------------------------------------
+  // --- Optional sources / providers ----------------------------------------
   ADZUNA_APP_ID: optionalStr,
   ADZUNA_APP_KEY: optionalStr,
   ANTHROPIC_API_KEY: optionalStr,
-  OUTREACH_DAILY_CAP: intWithDefault(10, 0, 200),
 
+  // Inlined at build time by Next, so it cannot be a runtime setting.
   NEXT_PUBLIC_APP_URL: optionalStr,
 });
 
@@ -182,30 +154,11 @@ function build(raw: NodeJS.ProcessEnv) {
     ENCRYPTION_KEY: raw.ENCRYPTION_KEY,
     CRON_SECRET: raw.CRON_SECRET,
     DRY_RUN: raw.DRY_RUN,
-    MATCH_THRESHOLD: raw.MATCH_THRESHOLD,
-    JOB_STALE_DAYS: raw.JOB_STALE_DAYS,
-    ENABLE_LINKEDIN_ALERTS: raw.ENABLE_LINKEDIN_ALERTS,
-    ENABLE_WELLFOUND_ALERTS: raw.ENABLE_WELLFOUND_ALERTS,
-    ENABLE_INDEED_ALERTS: raw.ENABLE_INDEED_ALERTS,
-    IMAP_HOST: raw.IMAP_HOST,
-    IMAP_PORT: raw.IMAP_PORT,
-    IMAP_MAILBOX: raw.IMAP_MAILBOX,
     IMAP_USER: raw.IMAP_USER,
     IMAP_PASSWORD: raw.IMAP_PASSWORD,
-    LINKEDIN_ALERT_DAYS: raw.LINKEDIN_ALERT_DAYS,
-    ENABLE_LINKEDIN_ENRICH: raw.ENABLE_LINKEDIN_ENRICH,
-    LINKEDIN_ENRICH_DAILY_CAP: raw.LINKEDIN_ENRICH_DAILY_CAP,
-    LINKEDIN_ENRICH_DELAY_MS: raw.LINKEDIN_ENRICH_DELAY_MS,
-    ENABLE_FOLLOWUPS: raw.ENABLE_FOLLOWUPS,
-    FOLLOWUP_FIRST_DAYS: raw.FOLLOWUP_FIRST_DAYS,
-    FOLLOWUP_FINAL_DAYS: raw.FOLLOWUP_FINAL_DAYS,
-    FOLLOWUP_DAILY_CAP: raw.FOLLOWUP_DAILY_CAP,
-    WORKER_TIME_BUDGET_MS: raw.WORKER_TIME_BUDGET_MS,
-    WORKER_BATCH_SIZE: raw.WORKER_BATCH_SIZE,
     ADZUNA_APP_ID: raw.ADZUNA_APP_ID,
     ADZUNA_APP_KEY: raw.ADZUNA_APP_KEY,
     ANTHROPIC_API_KEY: raw.ANTHROPIC_API_KEY,
-    OUTREACH_DAILY_CAP: raw.OUTREACH_DAILY_CAP,
     NEXT_PUBLIC_APP_URL: raw.NEXT_PUBLIC_APP_URL,
   });
 
@@ -226,14 +179,6 @@ function build(raw: NodeJS.ProcessEnv) {
     issues.push(
       "TURSO_AUTH_TOKEN: required when TURSO_DATABASE_URL points at a remote " +
         "database. Run `turso db tokens create <db-name>`."
-    );
-  }
-
-  // A final follow-up scheduled before the first would fire both at once.
-  if (v.FOLLOWUP_FINAL_DAYS <= v.FOLLOWUP_FIRST_DAYS) {
-    issues.push(
-      `FOLLOWUP_FINAL_DAYS (${v.FOLLOWUP_FINAL_DAYS}) must be greater than ` +
-        `FOLLOWUP_FIRST_DAYS (${v.FOLLOWUP_FIRST_DAYS}).`
     );
   }
 

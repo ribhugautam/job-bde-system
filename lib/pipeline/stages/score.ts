@@ -23,8 +23,8 @@ import { claimJobs, claimLeads, failJob, failLead } from "./claim";
 // ---------------------------------------------------------------------------
 
 export async function runScore(ctx: StageContext): Promise<StageResult> {
-  const limit = ctx.env.WORKER_BATCH_SIZE;
-  const threshold = ctx.env.MATCH_THRESHOLD;
+  const limit = ctx.config.WORKER_BATCH_SIZE;
+  const threshold = ctx.config.MATCH_THRESHOLD;
 
   const jobs = await claimJobs(ctx, "score", limit);
   const leads = await claimLeads(ctx, "score", limit);

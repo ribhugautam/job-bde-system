@@ -1,6 +1,7 @@
 import { simpleParser, type ParsedMail } from "mailparser";
 import { getEnv } from "@/lib/config/env";
 import { withMailbox } from "./imap";
+import type { Settings } from "@/lib/config/settings";
 import { normalizeMessageId } from "./message-id";
 
 // ---------------------------------------------------------------------------
@@ -368,12 +369,15 @@ function collectSignalHeaders(
  * all normalisation so both sides of a comparison are canonicalised in one
  * place.
  */
-export async function fetchInboundSince(since: Date): Promise<InboundMessage[]> {
+export async function fetchInboundSince(
+  since: Date,
+  settings: Settings
+): Promise<InboundMessage[]> {
   // Our own sending address, so a mailbox that happens to contain sent mail
   // cannot feed our own follow-ups back in as replies.
   const selfAddress = getEnv().GMAIL_USER;
 
-  return withMailbox(async (client) => {
+  return withMailbox(settings, async (client) => {
     const out: InboundMessage[] = [];
 
     for await (const msg of client.fetch({ since }, { envelope: true, headers: true })) {
