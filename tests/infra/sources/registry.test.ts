@@ -145,22 +145,28 @@ describe("enabled()", () => {
     });
   });
 
-  describe("upwork_rss", () => {
+  describe("upwork_rss (retired)", () => {
     const upwork = () => byName(LEAD_SOURCES, "upwork_rss");
 
-    it("is disabled by default, with a reason naming the flag", () => {
-      expect(upwork().enabled()).toBe(false);
-      expect(upwork().disabledReason?.()).toContain("ENABLE_UPWORK_RSS");
+    it("is retired, with a reason that names the 410 rather than a flag", () => {
+      const reason = upwork().retired?.reason ?? "";
+      expect(upwork().retired?.since).toBe("2026-08-21");
+      expect(reason).toContain("410");
+      // The point of the retirement: there is no configuration to go and fix,
+      // so the message must not send the operator looking for one.
+      expect(reason).not.toContain("ENABLE_UPWORK_RSS");
     });
 
-    it("is enabled when ENABLE_UPWORK_RSS is set", () => {
+    it("carries no fetcher at all", () => {
+      // Not a stub that returns [] and not one that throws — genuinely absent,
+      // so there is no dead code path that could be called by accident.
+      expect(upwork().fetch).toBeUndefined();
+    });
+
+    it("cannot be switched back on by the old flag", () => {
+      // ENABLE_UPWORK_RSS has been removed from the env schema; even if a
+      // deployment still has it set, the source stays off.
       setEnv({ ENABLE_UPWORK_RSS: "1" });
-      expect(upwork().enabled()).toBe(true);
-      expect(upwork().disabledReason?.()).toBeUndefined();
-    });
-
-    it("stays disabled for a falsey flag value", () => {
-      setEnv({ ENABLE_UPWORK_RSS: "0" });
       expect(upwork().enabled()).toBe(false);
     });
   });
@@ -389,8 +395,76 @@ describe("fetchAllLeads", () => {
   });
 });
 
+describe("retired sources", () => {
+  const tombstone = (name: string): SourceDefinition<RawJob> => ({
+    name,
+    kind: "job",
+    enabled: () => false,
+    retired: { since: "2026-01-01", reason: "upstream returns 410 Gone" },
+  });
+
+  it("reports a retired source separately from disabled ones", async () => {
+    const result = await fetchAllJobs([
+      fakeJobSource("on", async () => [job("1", "on")]),
+      fakeJobSource("off", async () => [job("2", "off")], {
+        enabled: () => false,
+        disabledReason: () => "set SOME_FLAG=1",
+      }),
+      tombstone("dead"),
+    ]);
+
+    expect(result.jobs.map((j) => j.sourceId)).toEqual(["1"]);
+    expect(result.skipped).toEqual(["off: set SOME_FLAG=1"]);
+    expect(result.retired).toEqual(["dead: upstream returns 410 Gone"]);
+    // The whole point: a retired upstream is not a problem to be fixed.
+    expect(result.errors).toEqual([]);
+  });
+
+  it("never fetches a retired source, even if one is somehow supplied", async () => {
+    let called = false;
+    const result = await fetchAllJobs([
+      {
+        ...tombstone("dead"),
+        // A leftover fetcher must still never run — `retired` is checked before
+        // anything else precisely so a half-finished retirement is still safe.
+        fetch: async () => {
+          called = true;
+          return [job("1", "dead")];
+        },
+      },
+    ]);
+
+    expect(called).toBe(false);
+    expect(result.jobs).toEqual([]);
+  });
+
+  it("stays retired even when enabled() returns true", async () => {
+    // Otherwise setting a flag would promote a dead upstream back to an active
+    // source that fails on every single run — the loop this design removes.
+    const result = await fetchAllJobs([
+      { ...tombstone("dead"), enabled: () => true },
+    ]);
+
+    expect(result.retired).toEqual(["dead: upstream returns 410 Gone"]);
+    expect(result.errors).toEqual([]);
+    expect(result.skipped).toEqual([]);
+  });
+
+  it("reports an enabled source with no fetcher as an error, not silence", async () => {
+    // Omitting fetch is only legal on a retired entry. A definition that is
+    // active and fetcher-less is a registry bug and must be loud.
+    const result = await fetchAllJobs([
+      { name: "broken_def", kind: "job", enabled: () => true },
+    ]);
+
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]).toContain("broken_def");
+    expect(result.errors[0]).toContain("retired");
+  });
+});
+
 describe("the real registries, run with everything disabled", () => {
-  it("reports adzuna, linkedin_alert, wellfound_alert, indeed_alert and upwork_rss as skipped without fetching", async () => {
+  it("reports the flag-gated job sources as skipped without fetching", async () => {
     // Only the disabled sources are exercised here: the always-on ones are
     // filtered out before any fetch happens, so nothing hits the network.
     const jobs = await fetchAllJobs(
@@ -403,9 +477,13 @@ describe("the real registries, run with everything disabled", () => {
       "linkedin_alert",
       "wellfound_alert",
     ]);
+    expect(jobs.retired).toEqual([]);
+  });
 
+  it("reports upwork_rss as retired rather than skipped", async () => {
     const leads = await fetchAllLeads(LEAD_SOURCES.filter((s) => !s.enabled()));
     expect(leads.leads).toEqual([]);
-    expect(leads.skipped.map((s) => s.split(":")[0])).toEqual(["upwork_rss"]);
+    expect(leads.skipped).toEqual([]);
+    expect(leads.retired.map((s) => s.split(":")[0])).toEqual(["upwork_rss"]);
   });
 });

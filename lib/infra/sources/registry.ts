@@ -7,7 +7,6 @@ import {
   fetchWeWorkRemotely,
   fetchWeWorkRemotelyContractLeads,
 } from "./weworkremotely";
-import { fetchUpworkLeads } from "./upwork";
 import { fetchHimalayas } from "./himalayas";
 import { fetchJobicy } from "./jobicy";
 import { fetchAdzuna } from "./adzuna";
@@ -37,15 +36,42 @@ import { fetchYCombinator } from "./ycombinator";
 
 export type SourceKind = "job" | "lead";
 
+/**
+ * A source whose upstream is gone for good.
+ *
+ * Distinct from `enabled() === false`, and the distinction is the whole point.
+ * A disabled source is one YOU switched off and could switch back on; a retired
+ * source is one the *upstream* removed, where flipping any flag would only
+ * re-request a URL that will never answer again. Reporting the second as the
+ * first sent an operator looking for a config mistake that did not exist.
+ *
+ * A retired entry keeps its `name` and carries no `fetch` at all — see the
+ * tombstone note on upwork_rss below for why the entry cannot simply be
+ * deleted.
+ */
+export type RetirementNotice = {
+  /** ISO date the retirement was confirmed, so the tombstone dates itself. */
+  since: string;
+  /** What happened upstream, in words an operator can act on (or stop acting on). */
+  reason: string;
+};
+
 export type SourceDefinition<T> = {
   /** Stable id persisted in the `source` DB column — NEVER change existing values. */
   name: string;
   kind: SourceKind;
-  fetch: () => Promise<T[]>;
+  /**
+   * Absent only on retired sources. index.ts short-circuits on `retired`
+   * before it would ever reach this, and reports an active source missing a
+   * fetcher as an error rather than crashing the run.
+   */
+  fetch?: () => Promise<T[]>;
   /** Evaluated per run, reads getEnv() — so a flag flip takes effect without a redeploy. */
   enabled: () => boolean;
   /** Why a source is off, surfaced in the dashboard/digest instead of it silently vanishing. */
   disabledReason?: () => string | undefined;
+  /** Set when the upstream is permanently gone. Overrides `enabled()` entirely. */
+  retired?: RetirementNotice;
 };
 
 /** Sources with no configuration of their own: open APIs, no key, always on. */
@@ -155,16 +181,25 @@ export const LEAD_SOURCES: SourceDefinition<RawLead>[] = [
     enabled: always,
   },
   {
-    // Experimental and unverified — Upwork has tightened RSS access before
-    // without notice, so this stays off until you confirm the feed loads.
+    // ---------------------------------------------------------------------
+    // TOMBSTONE. Upwork retired its public RSS job feeds: the endpoint answers
+    // 410 Gone, which is HTTP for "permanently removed, stop asking". There is
+    // no fetcher to repair and no flag to set — hence `retired` rather than
+    // `enabled: () => false`, which would have read as "you switched this off".
+    //
+    // The entry itself STAYS. `name` is a persisted value and half the
+    // (source, source_id) dedupe key, so deleting it would orphan every lead
+    // already ingested under it. A tombstone costs nothing; an orphaned key
+    // costs re-pitching clients that were already contacted.
+    // ---------------------------------------------------------------------
     name: "upwork_rss",
     kind: "lead",
-    fetch: fetchUpworkLeads,
-    enabled: () => getEnv().ENABLE_UPWORK_RSS,
-    disabledReason: () =>
-      getEnv().ENABLE_UPWORK_RSS
-        ? undefined
-        : "experimental; set ENABLE_UPWORK_RSS=1 to enable after confirming the " +
-          "Upwork RSS feed still loads in a browser",
+    enabled: () => false,
+    retired: {
+      since: "2026-08-21",
+      reason:
+        "Upwork retired its public RSS job feeds; the endpoint returns 410 Gone. " +
+        "Nothing to configure — this source cannot be re-enabled.",
+    },
   },
 ];

@@ -126,7 +126,6 @@ const schema = z.object({
   ADZUNA_APP_ID: optionalStr,
   ADZUNA_APP_KEY: optionalStr,
   ANTHROPIC_API_KEY: optionalStr,
-  ENABLE_UPWORK_RSS: boolFlag(false),
   OUTREACH_DAILY_CAP: intWithDefault(10, 0, 200),
 
   NEXT_PUBLIC_APP_URL: optionalStr,
@@ -173,7 +172,6 @@ function build(raw: NodeJS.ProcessEnv) {
     ADZUNA_APP_ID: raw.ADZUNA_APP_ID,
     ADZUNA_APP_KEY: raw.ADZUNA_APP_KEY,
     ANTHROPIC_API_KEY: raw.ANTHROPIC_API_KEY,
-    ENABLE_UPWORK_RSS: raw.ENABLE_UPWORK_RSS,
     OUTREACH_DAILY_CAP: raw.OUTREACH_DAILY_CAP,
     NEXT_PUBLIC_APP_URL: raw.NEXT_PUBLIC_APP_URL,
   });

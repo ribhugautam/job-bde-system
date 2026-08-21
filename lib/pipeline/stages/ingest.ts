@@ -59,6 +59,13 @@ export async function runIngest(ctx: StageContext): Promise<StageResult> {
     ctx.notices.push(`source off - ${skipped}`);
   }
 
+  // Retired sources read differently on purpose. "source off" invites the
+  // operator to go and switch it on; for an upstream that no longer exists
+  // that is a wild goose chase, so these say so and ask for nothing.
+  for (const retired of [...jobResult.retired, ...leadResult.retired]) {
+    ctx.notices.push(`source retired - ${retired}`);
+  }
+
   const processedJobs = await ingestJobs(ctx, jobResult.jobs);
   const processedLeads = await ingestLeads(ctx, leadResult.leads);
 

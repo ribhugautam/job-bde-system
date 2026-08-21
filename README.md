@@ -51,8 +51,11 @@ behavior this system had before enrichment existed.
 - The source fetchers were originally verified against mocked data rather than live endpoints.
   Watch the first few digests for parsing errors — job-board APIs change shape occasionally, and a
   source that starts failing is reported in the digest rather than failing silently.
-- **Upwork RSS is disabled by default** (`ENABLE_UPWORK_RSS=0`). Confirm the feed URL in
-  `lib/infra/sources/upwork.ts` returns real results in a browser before enabling it.
+- **Upwork RSS is retired** (2026-08-21). Upwork removed its public RSS job feeds; the endpoint
+  answers `410 Gone`, which is permanent. The `ENABLE_UPWORK_RSS` flag has been removed — there is
+  nothing to enable. The registry keeps an `upwork_rss` tombstone because that name is half the
+  `(source, source_id)` dedupe key and deleting it would orphan every lead already stored under it.
+  Freelance leads now come from `arbeitnow_contract` and `wwr_contract` only.
 - The scorer (`lib/domain/scoring/score.ts`) is a weighted keyword matcher, not an LLM judge —
   fast and free, but it will occasionally rank things oddly. Tune the weights in
   `lib/domain/scoring/resume-profile.ts` against real results.
