@@ -260,3 +260,23 @@ export async function countUsers(): Promise<number> {
   const [row] = await db.select({ n: count() }).from(schema.users);
   return row?.n ?? 0;
 }
+
+/**
+ * The lowest-numbered active admin — i.e. whoever the deployment belongs to.
+ *
+ * A STOPGAP for the unattended pipeline, which predates accounts and still runs
+ * one shared queue rather than one per person. Where it used to read "the"
+ * resume and "the" sending identity, it now reads the owner's, which is exactly
+ * the same row it read before. Per-user drafting and dispatch replaces every
+ * call to this; nothing new should start using it.
+ */
+export async function getOwnerUserId(): Promise<number | null> {
+  const db = getDb();
+  const [row] = await db
+    .select({ id: schema.users.id })
+    .from(schema.users)
+    .where(and(eq(schema.users.role, "admin"), eq(schema.users.isActive, true)))
+    .orderBy(asc(schema.users.id))
+    .limit(1);
+  return row?.id ?? null;
+}

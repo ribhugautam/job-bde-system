@@ -1,11 +1,11 @@
+import { CONTRACT_KEYWORDS } from "./taxonomy";
 import {
-  SKILLS,
-  TARGET_ROLES,
-  CONTRACT_KEYWORDS,
-  ROLE_VETO_PHRASES,
+  defaultProfile,
   yearsOfExperience,
-} from "./resume-profile";
+  type ScoringProfile,
+} from "./profile";
 import { RawJob, RawLead } from "@/lib/domain/types";
+import type { WorkArrangement } from "@/lib/domain/facts";
 
 function haystack(...parts: (string | undefined | string[])[]): string {
   return parts
@@ -47,17 +47,63 @@ function tokenPattern(rawToken: string): RegExp {
   return new RegExp(left + body + right);
 }
 
-// Patterns are compiled once at module load rather than per scored job.
-const SKILL_MATCHERS = SKILLS.map((skill) => ({
-  name: skill.name,
-  weight: skill.weight,
-  patterns: [skill.name, ...(skill.aliases || [])].map(tokenPattern),
-}));
+// ---------------------------------------------------------------------------
+// Compiled profiles
+//
+// These used to be module-level constants built once at import, because there
+// was one hardcoded resume and it could never change. Now every user brings
+// their own profile, so the patterns have to be compiled per profile — and
+// compiling ~50 regexes for every job in a 700-row list would be genuinely
+// wasteful.
+//
+// A WeakMap keyed on the profile OBJECT is what makes that a non-issue: the
+// jobs page builds one profile and scores every row against it, so compilation
+// happens once per request and the entry is collected with the profile. No
+// cache keys to invent, and — the part that matters — no way for an edited
+// profile to keep scoring against its previous compilation, which any
+// id-or-timestamp-keyed cache would have to get right by hand.
+// ---------------------------------------------------------------------------
 
-// Sum of every skill weight. It depends only on the resume profile, so it is
-// computed once here instead of being re-accumulated inside the scoring loop
-// on every single job.
-const MAX_SKILL_WEIGHT = SKILLS.reduce((total, skill) => total + skill.weight, 0);
+type CompiledProfile = {
+  skills: { name: string; weight: number; patterns: RegExp[] }[];
+  maxSkillWeight: number;
+  targetRoleTokens: string[][];
+  vetoes: { phrase: string; tokens: string[] }[];
+  acceptedArrangements: WorkArrangement[];
+  years: number | null;
+};
+
+const compiled = new WeakMap<ScoringProfile, CompiledProfile>();
+
+function compileProfile(profile: ScoringProfile): CompiledProfile {
+  const cached = compiled.get(profile);
+  if (cached) return cached;
+
+  const result: CompiledProfile = {
+    skills: profile.skills.map((skill) => ({
+      name: skill.name,
+      weight: skill.weight,
+      patterns: [skill.name, ...(skill.aliases || [])].map(tokenPattern),
+    })),
+    // Sum of every skill weight, accumulated once rather than inside the
+    // scoring loop on every single job.
+    maxSkillWeight: profile.skills.reduce((total, s) => total + s.weight, 0),
+    targetRoleTokens: profile.targetRoles
+      .map((role) => titleTokens(role.toLowerCase()).map(canonicalRoleToken))
+      .filter((tokens) => tokens.length > 0),
+    // Veto phrases are compared as raw tokens: none of them contains a role
+    // noun, so canonicalisation would be a no-op and folding it in would only
+    // blur the line between the policy list and the matching rules.
+    vetoes: profile.vetoPhrases
+      .map((phrase) => ({ phrase, tokens: titleTokens(phrase.toLowerCase()) }))
+      .filter((veto) => veto.tokens.length > 0),
+    acceptedArrangements: profile.acceptedArrangements,
+    years: yearsOfExperience(profile.careerStart),
+  };
+
+  compiled.set(profile, result);
+  return result;
+}
 
 // A posting only has to show this fraction of the total skill weight to earn
 // full marks - no real job description lists a third of somebody's resume, so
@@ -132,18 +178,6 @@ function canonicalRoleToken(token: string): string {
   return ROLE_NOUN_SYNONYMS.get(token) ?? token;
 }
 
-const TARGET_ROLE_TOKENS = TARGET_ROLES.map((role) =>
-  titleTokens(role.toLowerCase()).map(canonicalRoleToken)
-).filter((tokens) => tokens.length > 0);
-
-// Veto phrases are compared as raw tokens: none of them contains a role noun,
-// so canonicalisation would be a no-op and folding it in would only blur the
-// line between the policy list and the matching rules.
-const ROLE_VETOES = ROLE_VETO_PHRASES.map((phrase) => ({
-  phrase,
-  tokens: titleTokens(phrase.toLowerCase()),
-})).filter((veto) => veto.tokens.length > 0);
-
 /** True when `needles` appears in `tokens` in order, gaps allowed. */
 function containsInOrder(tokens: string[], needles: string[]): boolean {
   let matched = 0;
@@ -174,16 +208,19 @@ function containsAdjacent(tokens: string[], phrase: string[]): boolean {
  * other half is sales. Phrases are tested per clause only so that one cannot
  * be assembled across a separator ("... Business / Development Team").
  */
-function vetoedRolePhrase(title: string): string | null {
+function vetoedRolePhrase(
+  title: string,
+  vetoes: CompiledProfile["vetoes"]
+): string | null {
   const clauses = titleClauses(title).map(titleTokens);
-  const hit = ROLE_VETOES.find((veto) =>
+  const hit = vetoes.find((veto) =>
     clauses.some((tokens) => containsAdjacent(tokens, veto.tokens))
   );
   return hit ? hit.phrase : null;
 }
 
-function matchesTargetRole(title: string): boolean {
-  return TARGET_ROLE_TOKENS.some((role) =>
+function matchesTargetRole(title: string, roleTokens: string[][]): boolean {
+  return roleTokens.some((role) =>
     titleClauses(title).some((clause) =>
       containsInOrder(titleTokens(clause).map(canonicalRoleToken), role)
     )
@@ -213,6 +250,13 @@ function roleVetoReason(phrase: string): string {
 /** A stated floor this far above the candidate's years is a filter they fail. */
 const EXPERIENCE_TOLERANCE_YEARS = 2;
 
+/**
+ * Arrangements the caller is treated as wanting when none is stated. Remote
+ * rather than "all of them": this is a remote-jobs tool, and scoring the axis
+ * neutrally would rank an on-site role in another city level with a remote one.
+ */
+const DEFAULT_ACCEPTED_ARRANGEMENTS: WorkArrangement[] = ["remote"];
+
 const GEO_RESTRICTED_PENALTY = -25;
 // +10, not +8: at +8 this exactly cancelled ARRANGEMENT_ONSITE_PENALTY
 // (-8), so an India-eligible on-site job scored identically to a job where
@@ -226,12 +270,25 @@ const EXPERIENCE_BRACKET_BONUS = 6;
 const ARRANGEMENT_REMOTE_BONUS = 5;
 const ARRANGEMENT_ONSITE_PENALTY = -8;
 
+/**
+ * `years` may be null, meaning the profile does not know when this person's
+ * career started. Every experience adjustment is then SKIPPED rather than
+ * guessed: telling somebody a role "wants 8+ years, you have ~0" because their
+ * resume did not parse is worse than saying nothing about experience at all.
+ *
+ * `accepted` is which arrangements the person will actually take. This is where
+ * the removed filter chips went — expressed as a ranking input rather than a
+ * hard filter, so an outstanding hybrid role can still out-rank a mediocre
+ * remote one instead of being hidden outright.
+ */
 export function fitAdjustment(
   job: RawJob,
-  years: number = yearsOfExperience()
+  years: number | null,
+  accepted: WorkArrangement[] = DEFAULT_ACCEPTED_ARRANGEMENTS
 ): { delta: number; reasons: string[] } {
   const reasons: string[] = [];
   let delta = 0;
+  const wanted = accepted.length ? accepted : DEFAULT_ACCEPTED_ARRANGEMENTS;
 
   switch (job.geoEligibility) {
     case "restricted":
@@ -254,7 +311,7 @@ export function fitAdjustment(
       reasons.push("location eligibility not stated by this source");
   }
 
-  if (job.minYears !== undefined) {
+  if (job.minYears !== undefined && years !== null) {
     if (job.minYears > years + EXPERIENCE_TOLERANCE_YEARS) {
       delta += EXPERIENCE_OVER_PENALTY;
       reasons.push(
@@ -264,23 +321,25 @@ export function fitAdjustment(
       delta += EXPERIENCE_BRACKET_BONUS;
       reasons.push(`asks for ${job.minYears}-${job.maxYears} years - you are in range`);
     }
+  } else if (job.minYears !== undefined) {
+    reasons.push(
+      `asks for ${job.minYears}+ years - add your career start date to your ` +
+        `profile so this can be judged`
+    );
   }
 
-  switch (job.arrangement) {
-    case "remote":
-      delta += ARRANGEMENT_REMOTE_BONUS;
-      reasons.push("remote");
-      break;
-    case "hybrid":
-      delta += ARRANGEMENT_ONSITE_PENALTY;
-      reasons.push("hybrid - requires office presence");
-      break;
-    case "onsite":
-      delta += ARRANGEMENT_ONSITE_PENALTY;
-      reasons.push("on-site - requires office presence");
-      break;
-    default:
-      reasons.push("work arrangement not stated by this source");
+  if (job.arrangement === undefined || job.arrangement === "unknown") {
+    reasons.push("work arrangement not stated by this source");
+  } else if (wanted.includes(job.arrangement)) {
+    delta += ARRANGEMENT_REMOTE_BONUS;
+    reasons.push(job.arrangement);
+  } else {
+    delta += ARRANGEMENT_ONSITE_PENALTY;
+    reasons.push(
+      job.arrangement === "hybrid"
+        ? "hybrid - requires office presence"
+        : "on-site - requires office presence"
+    );
   }
 
   return { delta, reasons };
@@ -294,13 +353,17 @@ export function fitAdjustment(
  * One hard exclusion: a title naming a non-engineering role (see
  * ROLE_VETO_PHRASES) scores 0 regardless of its skill evidence.
  */
-export function scoreJob(job: RawJob): { score: number; reasons: string[] } {
+export function scoreJob(
+  job: RawJob,
+  profile: ScoringProfile = defaultProfile()
+): { score: number; reasons: string[] } {
+  const p = compileProfile(profile);
   const text = haystack(job.title, job.company, job.description, job.tags);
   const reasons: string[] = [];
-  const vetoPhrase = vetoedRolePhrase(job.title || "");
+  const vetoPhrase = vetoedRolePhrase(job.title || "", p.vetoes);
   let raw = 0;
 
-  for (const skill of SKILL_MATCHERS) {
+  for (const skill of p.skills) {
     if (skill.patterns.some((p) => p.test(text))) {
       raw += skill.weight;
       reasons.push(`matches skill: ${skill.name}`);
@@ -316,7 +379,7 @@ export function scoreJob(job: RawJob): { score: number; reasons: string[] } {
   // title-only match past MATCH_THRESHOLD on its own. That ceiling is what
   // makes the looser subsequence matching above safe.
   const title = (job.title || "").toLowerCase();
-  if (!vetoPhrase && matchesTargetRole(title)) {
+  if (!vetoPhrase && matchesTargetRole(title, p.targetRoleTokens)) {
     raw += 8;
     reasons.push("title matches a targeted role");
   }
@@ -367,11 +430,11 @@ export function scoreJob(job: RawJob): { score: number; reasons: string[] } {
     0,
     Math.min(
       100,
-      Math.round((raw / Math.max(MAX_SKILL_WEIGHT * FULL_CREDIT_FRACTION, 1)) * 100)
+      Math.round((raw / Math.max(p.maxSkillWeight * FULL_CREDIT_FRACTION, 1)) * 100)
     )
   );
 
-  const fit = fitAdjustment(job);
+  const fit = fitAdjustment(job, p.years, p.acceptedArrangements);
   reasons.push(...fit.reasons);
 
   return { score: Math.max(0, Math.min(100, normalized + fit.delta)), reasons };

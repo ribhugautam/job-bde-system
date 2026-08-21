@@ -17,16 +17,25 @@ export type ResumeFile = {
 };
 
 /**
- * Returns the active resume, or null if none has been uploaded yet.
+ * Returns a user's active resume, or null if they have not uploaded one.
  * Callers that MUST have a resume should use requireActiveResume() instead.
+ *
+ * SCOPED TO ONE USER, with no fallback to "any active resume". That fallback
+ * would be the single worst bug this system could have: it would attach one
+ * person's CV to another person's application, under that person's name, to a
+ * real company. A missing resume must read as missing.
  */
-export async function getActiveResume(): Promise<ResumeFile | null> {
+export async function getActiveResume(userId: number): Promise<ResumeFile | null> {
   const db = getDb();
   const [row] = await db
     .select()
     .from(schema.documents)
     .where(
-      and(eq(schema.documents.kind, "resume"), eq(schema.documents.isActive, true))
+      and(
+        eq(schema.documents.userId, userId),
+        eq(schema.documents.kind, "resume"),
+        eq(schema.documents.isActive, true)
+      )
     )
     .orderBy(desc(schema.documents.uploadedAt))
     .limit(1);
@@ -46,12 +55,12 @@ export async function getActiveResume(): Promise<ResumeFile | null> {
  * with no CV attached is worse than no application at all - it reads as
  * careless and burns the lead. Fail loudly instead.
  */
-export async function requireActiveResume(): Promise<ResumeFile> {
-  const resume = await getActiveResume();
+export async function requireActiveResume(userId: number): Promise<ResumeFile> {
+  const resume = await getActiveResume(userId);
   if (!resume) {
     throw new Error(
-      "No active resume on file. Upload a PDF at /dashboard/resume (or run " +
-        "`npm run seed:resume -- <path-to.pdf>`) before any application can be sent."
+      "No active resume on file for this user. Upload a PDF at /dashboard/resume " +
+        "before any application can be sent."
     );
   }
   return resume;
@@ -67,11 +76,12 @@ export type SaveResumeResult =
  * which version of the CV was on file when a given application went out.
  */
 export async function saveResume(opts: {
+  userId: number;
   filename: string;
   mimeType: string;
   bytes: Buffer;
 }): Promise<SaveResumeResult> {
-  const { filename, mimeType, bytes } = opts;
+  const { userId, filename, mimeType, bytes } = opts;
 
   if (!ALLOWED_RESUME_MIME.includes(mimeType as (typeof ALLOWED_RESUME_MIME)[number])) {
     return {
@@ -99,16 +109,23 @@ export async function saveResume(opts: {
   }
 
   const db = getDb();
+  // Scoped to this user. Unscoped, one person uploading a CV would deactivate
+  // everyone else's and silently stop their applications being sent with one.
   await db
     .update(schema.documents)
     .set({ isActive: false })
     .where(
-      and(eq(schema.documents.kind, "resume"), eq(schema.documents.isActive, true))
+      and(
+        eq(schema.documents.userId, userId),
+        eq(schema.documents.kind, "resume"),
+        eq(schema.documents.isActive, true)
+      )
     );
 
   const [inserted] = await db
     .insert(schema.documents)
     .values({
+      userId,
       kind: "resume",
       filename,
       mimeType,

@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { scoreJob, fitAdjustment } from "@/lib/domain/scoring/score";
+import { scoreJob as scoreJobWithProfile, fitAdjustment } from "@/lib/domain/scoring/score";
+import {
+  defaultProfile,
+  type ScoringProfile,
+} from "@/lib/domain/scoring/profile";
 import { yearsOfExperience } from "@/lib/domain/scoring/resume-profile";
 import type { RawJob } from "@/lib/domain/types";
 
@@ -14,6 +18,23 @@ function makeJob(overrides: Partial<RawJob> = {}): RawJob {
     ...overrides,
   };
 }
+
+// ---------------------------------------------------------------------------
+// Scoring is now per-profile: scoreJob(job, profile). Experience rules depend
+// on the profile's careerStart, and the DEFAULT profile deliberately has none
+// (skipping experience adjustments rather than guessing at somebody's
+// seniority). These suites predate that and assert experience behaviour, so
+// they run against an explicit profile with a known career start -- the same
+// December 2023 date the hardcoded resume used, which keeps every expectation
+// below meaning exactly what it did before.
+// ---------------------------------------------------------------------------
+const TEST_PROFILE: ScoringProfile = {
+  ...defaultProfile(),
+  careerStart: new Date("2023-12-01T00:00:00Z"),
+};
+
+const scoreJob = (job: RawJob, profile: ScoringProfile = TEST_PROFILE) =>
+  scoreJobWithProfile(job, profile);
 
 describe("fitAdjustment", () => {
   const YEARS = 3;

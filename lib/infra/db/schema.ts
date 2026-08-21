@@ -97,6 +97,52 @@ export const invites = sqliteTable(
 );
 
 // ---------------------------------------------------------------------------
+// USER PROFILES — what each person's job list is ranked against.
+//
+// This is the table that makes "no filters, ranked by MY resume" possible. The
+// matcher used to read one person's skills straight out of a TypeScript module
+// (lib/domain/scoring/resume-profile.ts), so there was exactly one ranking and
+// it belonged to whoever wrote the file.
+//
+// Auto-populated from the uploaded resume PDF, then editable — extraction is
+// heuristic and gets things wrong, so the user always outranks it.
+// ---------------------------------------------------------------------------
+export const userProfiles = sqliteTable("user_profiles", {
+  // One row per user; the user id IS the key. A user cannot have two profiles.
+  userId: integer("user_id").primaryKey(),
+
+  /** [{ name, weight, aliases }] — a subset of lib/domain/scoring/taxonomy.ts. */
+  skills: text("skills", { mode: "json" }).$type<
+    { name: string; weight: number; aliases?: string[] }[]
+  >(),
+  targetRoles: text("target_roles", { mode: "json" }).$type<string[]>(),
+  vetoPhrases: text("veto_phrases", { mode: "json" }).$type<string[]>(),
+
+  /** Null means unknown, and experience adjustments are then skipped entirely. */
+  careerStart: integer("career_start", { mode: "timestamp" }),
+
+  /**
+   * Which arrangements this person will actually take. This is where the
+   * removed filter chips went: with no filter bar, "I don't want on-site" has
+   * to live somewhere, and as a ranking input it lets an outstanding hybrid
+   * role still out-rank a mediocre remote one rather than being hidden.
+   */
+  acceptedArrangements: text("accepted_arrangements", { mode: "json" })
+    .$type<string[]>(),
+
+  /** Which uploaded document this was extracted from, for "re-extract". */
+  sourceDocumentId: integer("source_document_id"),
+  /** True until the user edits, so the UI can say the values are unreviewed. */
+  autoExtracted: integer("auto_extracted", { mode: "boolean" })
+    .notNull()
+    .default(true),
+
+  updatedAt: integer("updated_at", { mode: "timestamp" }).default(
+    sql`(unixepoch())`
+  ),
+});
+
+// ---------------------------------------------------------------------------
 // Full-time / part-time REMOTE JOBS pulled from job board sources
 // ---------------------------------------------------------------------------
 export const jobs = sqliteTable(
@@ -352,6 +398,20 @@ export const outreach = sqliteTable(
 // ---------------------------------------------------------------------------
 export const documents = sqliteTable("documents", {
   id: integer("id").primaryKey({ autoIncrement: true }),
+  /**
+   * Whose resume this is.
+   *
+   * NULLABLE, and it has to be: rows already existed when accounts were
+   * introduced, and there is no correct value to invent for them at ALTER time.
+   * The migration assigns them to the seeded admin, which is factually right —
+   * they were uploaded when the deployment had exactly one user.
+   *
+   * Read paths treat a null userId as belonging to nobody rather than to
+   * everybody. Falling back to "any active resume" would attach one person's CV
+   * to another person's application, which is the single worst thing this
+   * system could do.
+   */
+  userId: integer("user_id"),
   kind: text("kind").notNull().default("resume"), // "resume" for now
   filename: text("filename").notNull(),
   mimeType: text("mime_type").notNull().default("application/pdf"),

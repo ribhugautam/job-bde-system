@@ -2,6 +2,7 @@ import { and, desc, eq, gte, inArray } from "drizzle-orm";
 import { schema } from "@/lib/infra/db/client";
 import { sendMail } from "@/lib/infra/mail/send";
 import { getActiveResume } from "@/lib/infra/db/documents";
+import { getOwnerUserId } from "@/lib/infra/db/users";
 import type { StageContext, StageResult } from "../context";
 import { claimJobs, claimLeads, failJob, failLead } from "./claim";
 import { nextFollowUpDue } from "../followup-schedule";
@@ -35,7 +36,11 @@ export async function runDispatch(ctx: StageContext): Promise<StageResult> {
     return { processed: 0, hasMore: false };
   }
 
-  const resume = await getActiveResume();
+  // The unattended pipeline still runs one shared queue rather than one per
+  // person, so it uses the owner's resume -- the same single row it read before
+  // accounts existed. Per-user drafting is what makes this per-user.
+  const ownerId = await getOwnerUserId();
+  const resume = ownerId === null ? null : await getActiveResume(ownerId);
   if (!resume && jobs.length > 0) {
     // A notice, not an error: nothing broke, and queueing rather than sending
     // without a CV is the correct behavior. It is still the single most

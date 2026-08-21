@@ -1,13 +1,18 @@
 import { getActiveResume } from "@/lib/infra/db/documents";
+import { requireUser } from "@/lib/infra/session";
 import ResumeUpload from "@/components/ResumeUpload";
 import DbErrorNotice from "@/components/DbErrorNotice";
 
 export const dynamic = "force-dynamic";
 
 export default async function ResumePage() {
+  const user = await requireUser("/dashboard/resume");
+
   let resume;
   try {
-    resume = await getActiveResume();
+    // Scoped to this user. Everyone uploads and replaces their own CV; nobody
+    // sees or sends anybody else's.
+    resume = await getActiveResume(user.id);
   } catch (err) {
     return <DbErrorNotice error={err} />;
   }

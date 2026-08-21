@@ -9,6 +9,7 @@
 import { readFileSync } from "node:fs";
 import { basename, resolve } from "node:path";
 import { saveResume } from "../lib/infra/db/documents";
+import { getOwnerUserId } from "../lib/infra/db/users";
 
 async function main() {
   const arg = process.argv[2];
@@ -26,7 +27,19 @@ async function main() {
     process.exit(1);
   }
 
+  // Seeds the OWNER's resume: this script predates accounts and exists to put
+  // a CV on file from the command line before anyone has signed in.
+  const ownerId = await getOwnerUserId();
+  if (ownerId === null) {
+    console.error(
+      "No admin account exists yet. Run `npm run db:migrate` first -- it seeds " +
+        "the first admin from OWNER_EMAIL and APP_PASSWORD."
+    );
+    process.exit(1);
+  }
+
   const result = await saveResume({
+    userId: ownerId,
     filename: basename(path),
     mimeType: "application/pdf",
     bytes,

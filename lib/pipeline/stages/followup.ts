@@ -3,6 +3,7 @@ import { schema } from "@/lib/infra/db/client";
 import { sendMail } from "@/lib/infra/mail/send";
 import { composeFollowUp } from "@/lib/domain/drafting/compose";
 import { getActiveResume } from "@/lib/infra/db/documents";
+import { getOwnerUserId } from "@/lib/infra/db/users";
 import type { StageContext, StageResult } from "../context";
 import { followUpStep, nextFollowUpDue } from "../followup-schedule";
 
@@ -59,7 +60,11 @@ export async function runFollowUp(ctx: StageContext): Promise<StageResult> {
     return { processed: 0, hasMore: false };
   }
 
-  const resume = await getActiveResume();
+  // Same stopgap as dispatch: follow-ups belong to the shared unattended queue,
+  // so they attach the owner's resume -- the single row this read before
+  // accounts existed.
+  const ownerId = await getOwnerUserId();
+  const resume = ownerId === null ? null : await getActiveResume(ownerId);
   let processed = 0;
 
   // --- Application follow-ups ---------------------------------------------

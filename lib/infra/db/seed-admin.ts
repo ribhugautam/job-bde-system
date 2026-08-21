@@ -1,4 +1,11 @@
-import { countUsers, createUser, findUserByEmail } from "./users";
+import { isNull } from "drizzle-orm";
+import { getDb, schema } from "./client";
+import {
+  countUsers,
+  createUser,
+  findUserByEmail,
+  getOwnerUserId,
+} from "./users";
 
 // ---------------------------------------------------------------------------
 // The anti-lockout guarantee.
@@ -66,4 +73,36 @@ export async function ensureFirstAdmin(): Promise<SeedResult> {
   }
 
   return { created: true, email: result.user.email };
+}
+
+/**
+ * Assigns pre-accounts rows to the owner.
+ *
+ * `documents.user_id` had to be added as NULLABLE — the column did not exist
+ * when those rows were written, and ALTER TABLE has no correct value to invent.
+ * Left null they would belong to nobody: getActiveResume() is scoped to a user
+ * and has NO "any active resume" fallback, deliberately, because that fallback
+ * would attach one person's CV to another person's application.
+ *
+ * So the resume uploaded when this deployment had exactly one user is assigned
+ * to that user. Run on every migrate, not just the seeding one, so a database
+ * migrated before the admin existed is still repaired on the next run.
+ */
+export async function claimOrphanedDocuments(): Promise<number> {
+  const ownerId = await getOwnerUserId();
+  if (ownerId === null) return 0;
+
+  const db = getDb();
+  const orphans = await db
+    .select({ id: schema.documents.id })
+    .from(schema.documents)
+    .where(isNull(schema.documents.userId));
+  if (orphans.length === 0) return 0;
+
+  await db
+    .update(schema.documents)
+    .set({ userId: ownerId })
+    .where(isNull(schema.documents.userId));
+
+  return orphans.length;
 }

@@ -20,7 +20,10 @@ import { createClient } from "@libsql/client";
 import { drizzle } from "drizzle-orm/libsql";
 import { migrate } from "drizzle-orm/libsql/migrator";
 import { resolveDbTarget } from "./db-target";
-import { ensureFirstAdmin } from "../lib/infra/db/seed-admin";
+import {
+  claimOrphanedDocuments,
+  ensureFirstAdmin,
+} from "../lib/infra/db/seed-admin";
 
 const MIGRATIONS_FOLDER = "lib/infra/db/migrations";
 
@@ -65,6 +68,14 @@ async function main() {
     );
   } else {
     console.log(`First-admin seed skipped: ${seeded.reason}`);
+  }
+
+  // Rows written before accounts existed have no owner. Assigning them is part
+  // of migrating, not an optional cleanup -- an unowned resume is invisible to
+  // every read path, since those are all scoped to a user by design.
+  const claimed = await claimOrphanedDocuments();
+  if (claimed > 0) {
+    console.log(`Assigned ${claimed} pre-accounts document(s) to the owner.`);
   }
 
   client.close();
