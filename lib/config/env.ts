@@ -93,6 +93,18 @@ const schema = z.object({
   // --- Matching ------------------------------------------------------------
   MATCH_THRESHOLD: intWithDefault(40, 0, 100),
 
+  /**
+   * How long an untriaged job stays in the inbox before it moves to archive.
+   *
+   * An env var rather than a constant because it is a judgement about a market,
+   * not about the code: how long a posting stays genuinely open varies, and the
+   * right number is whatever stops you triaging jobs that were filled weeks
+   * ago. Nothing is deleted and nothing is written when this changes -- staleness
+   * is a read-time date comparison, so raising or lowering it reflows every
+   * bucket instantly and reversibly.
+   */
+  JOB_STALE_DAYS: intWithDefault(30, 1, 365),
+
   // --- LinkedIn ingest (own inbox, IMAP, read-only) ------------------------
   ENABLE_LINKEDIN_ALERTS: boolFlag(false),
   ENABLE_WELLFOUND_ALERTS: boolFlag(false),
@@ -151,6 +163,7 @@ function build(raw: NodeJS.ProcessEnv) {
     CRON_SECRET: raw.CRON_SECRET,
     DRY_RUN: raw.DRY_RUN,
     MATCH_THRESHOLD: raw.MATCH_THRESHOLD,
+    JOB_STALE_DAYS: raw.JOB_STALE_DAYS,
     ENABLE_LINKEDIN_ALERTS: raw.ENABLE_LINKEDIN_ALERTS,
     ENABLE_WELLFOUND_ALERTS: raw.ENABLE_WELLFOUND_ALERTS,
     ENABLE_INDEED_ALERTS: raw.ENABLE_INDEED_ALERTS,

@@ -5,6 +5,7 @@ import {
   integer,
   index,
   uniqueIndex,
+  primaryKey,
 } from "drizzle-orm/sqlite-core";
 
 // SQLite notes (migrated from Postgres):
@@ -252,6 +253,46 @@ export const jobs = sqliteTable(
     index("jobs_status_idx").on(t.status),
     index("jobs_facts_idx").on(t.geoEligibility, t.arrangement, t.score),
     index("jobs_facts_version_idx").on(t.factsVersion),
+  ]
+);
+
+// ---------------------------------------------------------------------------
+// PER-USER JOB STATE — the private half of a shared job pool.
+//
+// Everyone sees the same ingested jobs; what each person has DONE with one is
+// theirs. A colleague dismissing a job never hides it from you.
+//
+// WRITTEN ONLY WHEN SOMEBODY ACTS. There is deliberately no row per user per
+// job: absence means "untriaged", which is the overwhelmingly common case. That
+// is what lets a new colleague sign in to a fully ranked inbox with nothing
+// written for them, and what keeps this table proportional to actions taken
+// rather than to users x jobs. See lib/domain/jobs/buckets.ts.
+//
+// `jobs.status` still exists and still belongs to the unattended pipeline,
+// which runs one shared queue. The two are not the same axis: the pipeline's
+// status is "what has the system done", this is "what has this person done".
+// ---------------------------------------------------------------------------
+export const jobUserState = sqliteTable(
+  "job_user_state",
+  {
+    userId: integer("user_id").notNull(),
+    jobId: integer("job_id").notNull(),
+    /** One of JOB_STATUSES — see lib/pipeline/state.ts. */
+    status: text("status").notNull(),
+    /** Set when the person first triaged it, for their own audit trail. */
+    triagedAt: integer("triaged_at", { mode: "timestamp" }).default(
+      sql`(unixepoch())`
+    ),
+    updatedAt: integer("updated_at", { mode: "timestamp" }).default(
+      sql`(unixepoch())`
+    ),
+  },
+  (t) => [
+    // Composite primary key: one state row per person per job, enforced by the
+    // database rather than by every write path remembering to check.
+    primaryKey({ columns: [t.userId, t.jobId] }),
+    // The bucket queries all start "my rows", so this is the index they need.
+    index("job_user_state_user_status_idx").on(t.userId, t.status),
   ]
 );
 
