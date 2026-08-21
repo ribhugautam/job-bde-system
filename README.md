@@ -162,43 +162,121 @@ You also get a free table-editor UI with `npm run db:studio`.
 ## Access control
 
 The whole deployment is private. `proxy.ts` gates every route and every API
-endpoint behind a single password; unauthenticated browsers are redirected to
-`/login` and unauthenticated API calls get a `401`. This matters because the
-dashboard exposes your resume, your inbox-derived job alerts, and the ability to
-send email as you.
+endpoint; unauthenticated browsers are redirected to `/login` and unauthenticated
+API calls get a `401`. This matters because the dashboard exposes people's
+resumes, their inbox-derived job alerts, and the ability to send email as them.
 
-- **`APP_PASSWORD`** - the one password that unlocks the app. Minimum 8 characters, and it
-  should be **random rather than a word**. The login route throttles at 10 attempts per minute
-  per IP, but that counter is per warm serverless instance rather than global, so it is a speed
-  bump and not a real rate limiter: 8 random characters are far out of brute-force reach, an
-  8-letter dictionary word is not. `openssl rand -base64 12` produces something suitable.
-- **`AUTH_SECRET`** - random string (`openssl rand -hex 32`) used to sign the session
-  cookie. Rotating it instantly signs out every browser.
+### Accounts
 
-Both are required. If either is missing or too short, the app **fails closed**: every route
-returns `503`, including the login page. It will never fall open. The 503 page names which
-variable is at fault and whether it is absent or merely too short — it does not just say
-"set these", because a value that is set but one character under the limit is otherwise
-indistinguishable from a missing one, and that costs an afternoon.
+Each person has their own account. **Registration is invite-only** — this app
+sits on a public URL and sends email on people's behalf, so "anyone who finds
+the login page" is not an acceptable population.
+
+- An **admin** invites someone from `/dashboard/team` and sends them the
+  one-time link it produces. The link works once and expires after 7 days.
+- **There is no self-signup and no password reset.** An admin can deactivate an
+  account; deactivation is a flag, never a delete, because applications and
+  outreach are a record of email that really was sent and removing the sender
+  would strand them.
+
+**The first admin is created for you.** `npm run db:migrate` seeds it from
+`OWNER_EMAIL` + `APP_PASSWORD`, because the migration that creates the `users`
+table is the exact moment `APP_PASSWORD` stops working on its own — and with
+invite-only registration there would otherwise be nobody able to issue the first
+invite. Sign in with those, then invite everyone else.
+
+`APP_PASSWORD` is legacy after that point: it seeds the first admin and is no
+longer accepted as a login on its own.
+
+### The two env vars the gate needs
+
+- **`APP_PASSWORD`** — minimum 8 characters, **random rather than a word**. The
+  login route throttles at 10 attempts per minute per IP+email, but that counter
+  is per warm serverless instance rather than global, so it is a speed bump and
+  not a real rate limiter: 8 random characters are far out of brute-force reach,
+  an 8-letter dictionary word is not. `openssl rand -base64 12` produces
+  something suitable.
+- **`AUTH_SECRET`** — random string (`openssl rand -hex 32`) used to sign the
+  session cookie. Rotating it instantly signs out every browser.
+
+Both are required. If either is missing or too short, the app **fails closed**:
+every route returns `503`, including the login page. It will never fall open. The
+503 page names which variable is at fault and whether it is absent or merely too
+short — it does not just say "set these", because a value that is set but one
+character under the limit is otherwise indistinguishable from a missing one, and
+that costs an afternoon.
 
 Both limits live in `lib/config/auth-policy.ts` and are enforced in two places — the Edge
 gate in `lib/infra/auth.ts` and startup validation in `lib/config/env.ts`. They import the
 same constants so the two can never disagree; a test asserts it.
 
+### How a request is authorized, in two layers
+
 Signing in sets an `HttpOnly`, `Secure`, `SameSite=Lax` cookie valid for 30 days,
-holding only an expiry timestamp and its HMAC - there is no server-side session store.
-"Sign out" in the dashboard header clears it.
+holding a user id, an expiry, and their HMAC — there is no server-side session
+store. "Sign out" in the dashboard header clears it.
 
-Two routes are intentionally outside the password gate:
+Those two layers are **not redundant**, and the distinction is the most likely
+place for a future authorization bug:
 
-- `/login` and `/api/auth/*` - otherwise you could never sign in.
-- `/api/cron/daily` - Vercel Cron cannot send your browser cookie. It is protected
+1. **`proxy.ts`, on the Edge** — proves the cookie is a genuine, unexpired token
+   this deployment issued. It cannot reach the database, so it cannot know
+   whether that user still exists or is still active. A deactivated person's
+   cookie stays *cryptographically* valid until it expires.
+2. **`getSessionUser()` in `lib/infra/session.ts`** — loads the row and rejects
+   anyone deleted or deactivated. It is the **only** sanctioned way to learn who
+   is calling. Reading the cookie directly anywhere else silently re-opens the
+   gap in whichever route did it.
+
+Three routes are intentionally outside the gate:
+
+- `/login` and `/api/auth/login|logout` — otherwise you could never sign in.
+- `/invite/[token]` and `/api/auth/accept-invite` — accepting an invite happens
+  with no session by definition. The token in the URL is the credential, and it
+  is checked for being unexpired, unspent and unrevoked.
+- `/api/cron/daily` — Vercel Cron cannot send your browser cookie. It is protected
   separately by `CRON_SECRET` (bearer header, fail-closed if unset). **This is the one
   publicly reachable route that does real work, so `CRON_SECRET` must be a long random
   value, not a guessable one.**
 
-There is no password reset and no second user. If you lose the password, change
-`APP_PASSWORD` in Vercel and redeploy.
+### Sending identity
+
+Each person configures their own mailbox on `/dashboard/settings`; the app
+password is encrypted at rest with `ENCRYPTION_KEY` (a **separate** var from
+`AUTH_SECRET`, so rotating a signing key cannot destroy stored credentials).
+
+**Auto-send stays off until a mailbox is saved *and* verified.** Until then that
+person's applications are drafted and queued for one-click sending. Nothing can
+go out under the wrong name — `sendMail()` requires an explicit sender and has no
+fallback address.
+
+## How the job list works
+
+There are no filters. The list is ranked against **your** resume, and split into
+three piles:
+
+| Pile | What is in it |
+|---|---|
+| **Inbox** | New to you and not yet triaged, best match first |
+| **Working** | Jobs you kept, applied to, or are interviewing for |
+| **Archive** | Ones you dismissed, or that timed out before you got to them |
+
+Everyone shares the same pool of ingested jobs, but triage is private: a
+colleague dismissing a job never hides it from you.
+
+Untriaged jobs leave the Inbox after `JOB_STALE_DAYS` (default 30). Nothing is
+deleted and nothing is written when you change that number — staleness is
+computed when the page is read, so raising or lowering it reflows every pile
+instantly and reversibly.
+
+Ranking comes from your profile at `/dashboard/profile`, which is filled in
+automatically from your uploaded CV and is editable. Preferences that used to be
+filter chips ("remote only") live there now and shape the *order* instead of
+hiding things, so a strong hybrid role can still out-rank a mediocre remote one.
+
+**Known limitation:** location eligibility is judged against India for everyone,
+because it is computed once per job at ingest rather than per viewer. Correct for
+a team hiring from India; wrong for anyone else.
 
 ## Deploying
 
