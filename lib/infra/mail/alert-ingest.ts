@@ -1,5 +1,6 @@
 import { simpleParser } from "mailparser";
 import { withMailbox } from "./imap";
+import type { Settings } from "@/lib/config/settings";
 import type { AlertSource, ParsedAlertJob } from "@/lib/infra/sources/email/types";
 import type { RawJob } from "@/lib/domain/types";
 
@@ -68,10 +69,13 @@ export function toRawJobs(source: AlertSource, parsed: ParsedAlertJob[]): RawJob
  * Never throws for a single bad message: one unparseable email skips that
  * message rather than losing the rest of the run.
  */
-export async function fetchAlertSource(source: AlertSource): Promise<RawJob[]> {
+export async function fetchAlertSource(
+  source: AlertSource,
+  settings: Settings
+): Promise<RawJob[]> {
   const since = new Date(Date.now() - source.days * 24 * 60 * 60 * 1000);
 
-  const parsed = await withMailbox(async (client) => {
+  const parsed = await withMailbox(settings, async (client) => {
     const collected: ParsedAlertJob[] = [];
 
     for await (const msg of client.fetch(

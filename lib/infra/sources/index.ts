@@ -1,5 +1,6 @@
 import { safeFetchSource, RawJob, RawLead } from "./types";
 import { JOB_SOURCES, LEAD_SOURCES, type SourceDefinition } from "./registry";
+import type { Settings } from "@/lib/config/settings";
 
 // The fan-out over every configured source. The source list itself lives in
 // registry.ts — this file only knows how to run one.
@@ -36,7 +37,8 @@ type RunResult<T> = {
 type Runnable<T> = SourceDefinition<T> & { fetch: () => Promise<T[]> };
 
 async function runSources<T>(
-  sources: SourceDefinition<T>[]
+  sources: SourceDefinition<T>[],
+  settings: Settings
 ): Promise<RunResult<T>> {
   const active: Runnable<T>[] = [];
   const skipped: string[] = [];
@@ -55,10 +57,11 @@ async function runSources<T>(
 
     let on: boolean;
     try {
-      on = source.enabled();
+      on = source.enabled(settings);
     } catch (err) {
-      // A malformed environment makes getEnv() throw. Report it against the
-      // source and keep going rather than aborting the whole run.
+      // enabled() is supplied by the registry and could still throw on a
+      // malformed configuration. Report it against the source and keep going
+      // rather than aborting the whole run.
       errors.push(`${source.name}: ${describe(err)}`);
       continue;
     }
@@ -88,7 +91,9 @@ async function runSources<T>(
   }
 
   const results = await Promise.all(
-    active.map((source) => safeFetchSource(source.name, () => source.fetch()))
+    active.map((source) =>
+      safeFetchSource(source.name, () => source.fetch(settings))
+    )
   );
 
   return {
@@ -104,6 +109,7 @@ async function runSources<T>(
  * the real registry. Tests pass fakes so no test ever touches the network.
  */
 export async function fetchAllJobs(
+  settings: Settings,
   sources: SourceDefinition<RawJob>[] = JOB_SOURCES
 ): Promise<{
   jobs: RawJob[];
@@ -111,12 +117,13 @@ export async function fetchAllJobs(
   skipped: string[];
   retired: string[];
 }> {
-  const { items, errors, skipped, retired } = await runSources(sources);
+  const { items, errors, skipped, retired } = await runSources(sources, settings);
   return { jobs: items, errors, skipped, retired };
 }
 
 /** See the note on `sources` in fetchAllJobs. */
 export async function fetchAllLeads(
+  settings: Settings,
   sources: SourceDefinition<RawLead>[] = LEAD_SOURCES
 ): Promise<{
   leads: RawLead[];
@@ -124,7 +131,7 @@ export async function fetchAllLeads(
   skipped: string[];
   retired: string[];
 }> {
-  const { items, errors, skipped, retired } = await runSources(sources);
+  const { items, errors, skipped, retired } = await runSources(sources, settings);
   return { leads: items, errors, skipped, retired };
 }
 

@@ -24,6 +24,7 @@ import {
   claimOrphanedRecords,
   ensureFirstAdmin,
 } from "../lib/infra/db/seed-admin";
+import { seedSettingsFromEnv } from "../lib/infra/db/settings";
 
 const MIGRATIONS_FOLDER = "lib/infra/db/migrations";
 
@@ -80,6 +81,25 @@ async function main() {
       `Assigned pre-accounts rows to the owner: ${claimed.documents} document(s), ` +
         `${claimed.applications} application(s), ${claimed.outreach} outreach.`
     );
+  }
+
+  // Seeding settings is load-bearing, not tidy-up. Operational config moved out
+  // of env into a database row; without this seed every one of those values
+  // silently reverts to its schema default on the next deploy -- including
+  // MATCH_THRESHOLD, which changes what gets drafted and sent. Idempotent, and
+  // it only ever writes into an absent row, so re-running it cannot drag an
+  // admin's tuning back to whatever the environment still says.
+  const settings = await seedSettingsFromEnv();
+  if (settings.seeded) {
+    console.log(
+      settings.from.length
+        ? `Seeded runtime settings from ${settings.from.length} env var(s): ${settings.from.join(", ")}.
+` +
+            `  Those variables are now ignored -- manage these under Settings.`
+        : "Seeded runtime settings with defaults (no matching env vars were set)."
+    );
+  } else {
+    console.log(`Settings seed skipped: ${settings.reason}`);
   }
 
   client.close();

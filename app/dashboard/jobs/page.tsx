@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { getDb } from "@/lib/infra/db/client";
-import { getEnv } from "@/lib/config/env";
+import { getSettings } from "@/lib/infra/db/settings";
 import { requireUser } from "@/lib/infra/session";
 import { getProfile } from "@/lib/infra/db/profiles";
 import { touchLastSeen } from "@/lib/infra/db/users";
@@ -36,7 +36,7 @@ export default async function JobsPage({ searchParams }: PageProps<"/dashboard/j
   // the data fetch belongs in here. Same pattern as every other dashboard page.
   let data;
   try {
-    const env = getEnv();
+    const settings = await getSettings();
     const db = getDb();
     const profile = await getProfile(user.id);
     const ranked = await fetchRankedJobs({
@@ -44,13 +44,13 @@ export default async function JobsPage({ searchParams }: PageProps<"/dashboard/j
       userId: user.id,
       view,
       profile,
-      staleDays: env.JOB_STALE_DAYS,
+      staleDays: settings.JOB_STALE_DAYS,
       pageSize: PAGE_SIZE,
       // Read BEFORE it is advanced below, so "new since you last looked" means
       // since the PREVIOUS visit rather than since a moment ago.
       lastSeenAt: user.lastSeenAt,
     });
-    data = { ranked, staleDays: env.JOB_STALE_DAYS };
+    data = { ranked, staleDays: settings.JOB_STALE_DAYS };
   } catch (err) {
     return <DbErrorNotice error={err} />;
   }

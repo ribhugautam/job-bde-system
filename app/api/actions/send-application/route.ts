@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { getDb, schema } from "@/lib/infra/db/client";
 import { sendMail } from "@/lib/infra/mail/send";
-import { getEnv } from "@/lib/config/env";
+import { getSettings } from "@/lib/infra/db/settings";
 import { nextFollowUpDue } from "@/lib/pipeline/followup-schedule";
 import { getApiActor } from "@/lib/infra/session";
 import { getSenderIdentity } from "@/lib/infra/db/user-mail";
@@ -79,7 +79,7 @@ export async function POST(req: NextRequest) {
         // follow-up sequence would keep emailing someone who already replied.
         // It fails silently if omitted, which is why it is not optional here.
         messageId: result.messageId,
-        nextFollowUpAt: nextFollowUpDue(0, sentAt, getEnv()),
+        nextFollowUpAt: nextFollowUpDue(0, sentAt, await getSettings()),
       })
       .where(eq(schema.applications.id, applicationId));
     if (job) {

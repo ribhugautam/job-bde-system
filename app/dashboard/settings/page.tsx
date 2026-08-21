@@ -1,7 +1,11 @@
 import { LINKS } from "@/lib/domain/scoring/resume-profile";
 import { requireUser } from "@/lib/infra/session";
 import { getMailSettings } from "@/lib/infra/db/user-mail";
+import { getSettings, inertEnvVars } from "@/lib/infra/db/settings";
+import { getEnv } from "@/lib/config/env";
+import { canManageUsers } from "@/lib/domain/users/roles";
 import MailSettings from "@/components/settings/MailSettings";
+import RuntimeSettings from "@/components/settings/RuntimeSettings";
 import DbErrorNotice from "@/components/DbErrorNotice";
 
 export const dynamic = "force-dynamic";
@@ -58,14 +62,23 @@ function EnvRow({
 export default async function SettingsPage() {
   const user = await requireUser("/dashboard/settings");
 
-  let mail;
+  let data;
   try {
-    mail = await getMailSettings(user.id);
+    const [mail, settings] = await Promise.all([
+      getMailSettings(user.id),
+      getSettings(),
+    ]);
+    data = { mail, settings };
   } catch (err) {
     return <DbErrorNotice error={err} />;
   }
 
-  const dryRun = process.env.DRY_RUN === "1";
+  const { mail, settings } = data;
+  const isAdmin = canManageUsers(user.role);
+  const envForcesDryRun = getEnv().DRY_RUN;
+  // The EFFECTIVE value, combining both sources -- the raw setting alone would
+  // report "live" on a deployment that env has stopped.
+  const dryRun = envForcesDryRun || settings.DRY_RUN;
   return (
     <div className="space-y-8 max-w-2xl">
       <div>
@@ -89,13 +102,35 @@ export default async function SettingsPage() {
         </div>
         <div className="mt-1 text-xs text-(--text-muted)">
           {dryRun
-            ? "The daily run drafts applications and pitches into the dashboard only. Nothing leaves your Gmail, including the digest. Set DRY_RUN=0 (or remove it) to go live."
-            : "Applications auto-send to any listing that publishes an apply-by-email address, and outreach auto-sends up to the daily cap. Set DRY_RUN=1 to draft without sending."}
+            ? "The daily run drafts applications and pitches into the dashboard only. Nothing leaves the building, including the digest."
+            : "Applications auto-send to any listing that publishes an apply-by-email address, and outreach auto-sends up to the daily cap."}
+          {envForcesDryRun &&
+            " Forced on by DRY_RUN in the environment, which cannot be lifted from the dashboard."}
         </div>
       </div>
 
+      {/*
+        Admin only, and gated server-side rather than merely hidden: these
+        decide what the shared pipeline does for everyone, not a personal
+        preference. The API route enforces the same rule.
+      */}
+      {isAdmin && (
+        <div>
+          <h2 className="mb-2 text-sm font-semibold text-(--text-muted)">
+            Pipeline settings
+          </h2>
+          <RuntimeSettings
+            settings={settings}
+            inertEnv={inertEnvVars()}
+            envForcesDryRun={envForcesDryRun}
+          />
+        </div>
+      )}
+
       <div>
-        <h2 className="mb-2 text-sm font-semibold text-(--text-muted)">Environment</h2>
+        <h2 className="mb-2 text-sm font-semibold text-(--text-muted)">
+          Environment (secrets only)
+        </h2>
         <div className="rounded border border-(--border) p-3">
           <EnvRow required name="APP_PASSWORD" hint="Unlocks the whole app; min 8 chars (use random, not a word) or every route serves 503" />
           <EnvRow required name="AUTH_SECRET" hint="Signs the session cookie; openssl rand -hex 32" />
@@ -132,22 +167,21 @@ export default async function SettingsPage() {
           <EnvRow required name="GMAIL_USER" hint="Gmail address that sends applications, outreach and follow-ups" />
           <EnvRow required name="GMAIL_APP_PASSWORD" hint="16-char app password, not your normal Gmail password" />
           <EnvRow name="OWNER_EMAIL" hint="Where the digest gets sent" fallback="GMAIL_USER" />
-          <EnvRow name="DRY_RUN" hint="Draft everything, send nothing - see the banner above" fallback="0 (live)" />
-          <EnvRow name="MATCH_THRESHOLD" hint="Fit score a job must reach to be drafted" fallback="40" />
-          <EnvRow name="ENABLE_LINKEDIN_ALERTS" hint="Reads LinkedIn job alerts from your own inbox over IMAP, read-only" fallback="off" />
-          <EnvRow name="ENABLE_WELLFOUND_ALERTS" hint="Reads Wellfound &quot;New jobs:&quot; digests from your own inbox over IMAP, read-only" fallback="off" />
-          <EnvRow name="ENABLE_INDEED_ALERTS" hint="Reads Indeed job-alert digests the same way; high volume, skews toward agency postings" fallback="off" />
-          <EnvRow name="ENABLE_LINKEDIN_ENRICH" hint="Recovers descriptions from the public LinkedIn page (no login, no session)" fallback="on" />
-          <EnvRow name="LINKEDIN_ENRICH_DAILY_CAP" hint="Max public page fetches per day" fallback="80" />
-          <EnvRow name="ENABLE_FOLLOWUPS" hint="One nudge at day 4, a final at day 10, then stop permanently" fallback="on" />
-          <EnvRow name="FOLLOWUP_DAILY_CAP" hint="Max follow-up emails per day" fallback="20" />
-          <EnvRow name="WORKER_TIME_BUDGET_MS" hint="Worker stops cleanly here and resumes next run" fallback="45000" />
+          {/*
+            DRY_RUN is the one operational value still listed here, because it
+            is the only one env can still influence -- it forces dry-run on and
+            can never turn it off. Everything else that used to be in this list
+            moved to Pipeline settings above; leaving those rows would show
+            "not set" for values that ARE configured, just not here.
+          */}
+          <EnvRow name="DRY_RUN" hint="Deploy-level stop. Forces dry-run on; cannot be lifted from the dashboard" fallback="off (the Settings toggle decides)" />
+          <EnvRow name="ENCRYPTION_KEY" hint="Encrypts stored mailbox passwords; openssl rand -hex 32. Without it, mailbox setup is refused" />
+          <EnvRow name="IMAP_USER" hint="Inbox read for job alerts" fallback="GMAIL_USER" />
+          <EnvRow name="IMAP_PASSWORD" hint="The same app password works for IMAP" fallback="GMAIL_APP_PASSWORD" />
           <EnvRow name="ANTHROPIC_API_KEY" hint="AI-written drafts instead of the built-in templates" />
           <EnvRow name="ADZUNA_APP_ID" hint="Adzuna source is skipped unless BOTH key vars are set" />
           <EnvRow name="ADZUNA_APP_KEY" hint="See above" />
-          <EnvRow name="OUTREACH_DAILY_CAP" hint="Max cold pitches auto-sent per day" fallback="10" />
-          <EnvRow name="ENABLE_UPWORK_RSS" hint="Experimental - enable only after verifying the feed URL" fallback="off" />
-          <EnvRow name="NEXT_PUBLIC_APP_URL" hint="Your deployed URL, used in the digest email's links" />
+          <EnvRow name="NEXT_PUBLIC_APP_URL" hint="Your deployed URL. Inlined at build time, so it cannot be a runtime setting" />
         </div>
       </div>
 

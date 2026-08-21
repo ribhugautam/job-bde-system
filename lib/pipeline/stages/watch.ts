@@ -33,8 +33,8 @@ export async function runWatch(ctx: StageContext): Promise<StageResult> {
   // With none configured there is nothing to scan and no reason to warn on
   // every run — this is an optional capability, not a broken one.
   const hasImap = Boolean(
-    (ctx.env.IMAP_USER ?? ctx.env.GMAIL_USER) &&
-      (ctx.env.IMAP_PASSWORD ?? ctx.env.GMAIL_APP_PASSWORD)
+    (ctx.config.IMAP_USER ?? ctx.config.GMAIL_USER) &&
+      (ctx.config.IMAP_PASSWORD ?? ctx.config.GMAIL_APP_PASSWORD)
   );
   if (!hasImap) return { processed: 0, hasMore: false };
 
@@ -100,7 +100,7 @@ export async function runWatch(ctx: StageContext): Promise<StageResult> {
 
   let inbound;
   try {
-    inbound = await fetchInboundSince(since);
+    inbound = await fetchInboundSince(since, ctx.config);
   } catch (err) {
     // A mailbox that will not open must not take the run down — drafting and
     // sending are still useful without reply detection.

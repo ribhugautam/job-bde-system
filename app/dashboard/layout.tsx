@@ -2,6 +2,8 @@ import Link from "next/link";
 import { LogoutButton } from "@/components/LogoutButton";
 import RunPipelineButton from "@/components/RunPipelineButton";
 import { requireUser } from "@/lib/infra/session";
+import { getSettings } from "@/lib/infra/db/settings";
+import { getEnv } from "@/lib/config/env";
 import { canManageUsers } from "@/lib/domain/users/roles";
 
 const NAV = [
@@ -32,7 +34,9 @@ export default async function DashboardLayout({
   // page reads it and then advances it. Updating here would zero the marker on
   // every navigation.
   const user = await requireUser();
-  const dryRun = process.env.DRY_RUN === "1";
+  // The EFFECTIVE value: env can force dry-run on, so reading either source
+  // alone would mislabel the header badge.
+  const dryRun = getEnv().DRY_RUN || (await getSettings()).DRY_RUN;
 
   return (
     <div className="flex min-h-screen flex-col bg-(--bg) text-(--text)">

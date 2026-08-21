@@ -20,8 +20,8 @@ import { followUpStep, nextFollowUpDue } from "../followup-schedule";
 // ---------------------------------------------------------------------------
 
 export async function runFollowUp(ctx: StageContext): Promise<StageResult> {
-  if (!ctx.env.ENABLE_FOLLOWUPS) return { processed: 0, hasMore: false };
-  if (ctx.env.DRY_RUN) return { processed: 0, hasMore: false };
+  if (!ctx.config.ENABLE_FOLLOWUPS) return { processed: 0, hasMore: false };
+  if (ctx.config.dryRun) return { processed: 0, hasMore: false };
 
   // Unlike dispatch, a follow-up has nothing useful to do without a mailbox.
   // Dispatch can still draft and queue for one-click sending; a follow-up is
@@ -31,7 +31,7 @@ export async function runFollowUp(ctx: StageContext): Promise<StageResult> {
   if (!ctx.sender) return { processed: 0, hasMore: false };
 
   const now = new Date();
-  let remaining = ctx.env.FOLLOWUP_DAILY_CAP;
+  let remaining = ctx.config.FOLLOWUP_DAILY_CAP;
   if (remaining <= 0) return { processed: 0, hasMore: false };
 
   const [apps, pitches] = await Promise.all([
@@ -144,7 +144,7 @@ export async function runFollowUp(ctx: StageContext): Promise<StageResult> {
           // Null once the sequence is exhausted, which is what makes "then
           // never again" a property of the data rather than of the code path.
           nextFollowUpAt: app.sentAt
-            ? nextFollowUpDue(count, app.sentAt, ctx.env)
+            ? nextFollowUpDue(count, app.sentAt, ctx.config)
             : null,
         })
         .where(eq(schema.applications.id, app.id));
@@ -216,7 +216,7 @@ export async function runFollowUp(ctx: StageContext): Promise<StageResult> {
           followUpCount: count,
           lastFollowUpAt: now,
           nextFollowUpAt: pitch.sentAt
-            ? nextFollowUpDue(count, pitch.sentAt, ctx.env)
+            ? nextFollowUpDue(count, pitch.sentAt, ctx.config)
             : null,
         })
         .where(eq(schema.outreach.id, pitch.id));

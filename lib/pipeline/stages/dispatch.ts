@@ -29,7 +29,7 @@ function startOfToday(): Date {
 }
 
 export async function runDispatch(ctx: StageContext): Promise<StageResult> {
-  const limit = ctx.env.WORKER_BATCH_SIZE;
+  const limit = ctx.config.WORKER_BATCH_SIZE;
   const jobs = await claimJobs(ctx, "dispatch", limit);
   const leads = await claimLeads(ctx, "dispatch", limit);
   if (jobs.length === 0 && leads.length === 0) {
@@ -107,7 +107,7 @@ async function dispatchJobs(
       // usable mailbox there is no address this could honestly come from.
       const canSend =
         Boolean(job.applyEmail) && Boolean(resume) && Boolean(ctx.sender);
-      const willSend = canSend && !ctx.env.DRY_RUN;
+      const willSend = canSend && !ctx.config.dryRun;
 
       if (!willSend) {
         await ctx.db
@@ -181,7 +181,7 @@ async function dispatchJobs(
           sentTo: job.applyEmail,
           sendMode: "auto_email",
           messageId: result.messageId,
-          nextFollowUpAt: nextFollowUpDue(0, sentAt, ctx.env),
+          nextFollowUpAt: nextFollowUpDue(0, sentAt, ctx.config),
         })
         .where(eq(schema.applications.id, app.id));
 
@@ -238,7 +238,7 @@ async function dispatchLeads(
         eq(schema.outreach.status, "sent")
       )
     );
-  let remaining = Math.max(0, ctx.env.OUTREACH_DAILY_CAP - sentToday.length);
+  let remaining = Math.max(0, ctx.config.OUTREACH_DAILY_CAP - sentToday.length);
 
   let processed = 0;
 
@@ -258,7 +258,7 @@ async function dispatchLeads(
     try {
       const canSend =
         Boolean(lead.contactEmail) && remaining > 0 && Boolean(ctx.sender);
-      const willSend = canSend && !ctx.env.DRY_RUN;
+      const willSend = canSend && !ctx.config.dryRun;
 
       if (!willSend) {
         await ctx.db
@@ -314,7 +314,7 @@ async function dispatchLeads(
           sentTo: lead.contactEmail,
           sendMode: "auto_email",
           messageId: result.messageId,
-          nextFollowUpAt: nextFollowUpDue(0, sentAt, ctx.env),
+          nextFollowUpAt: nextFollowUpDue(0, sentAt, ctx.config),
         })
         .where(eq(schema.outreach.id, pitch.id));
 

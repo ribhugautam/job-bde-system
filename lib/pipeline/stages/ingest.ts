@@ -45,8 +45,8 @@ function chunked<T>(items: T[], size: number): T[][] {
 
 export async function runIngest(ctx: StageContext): Promise<StageResult> {
   const [jobResult, leadResult] = await Promise.all([
-    fetchAllJobs(),
-    fetchAllLeads(),
+    fetchAllJobs(ctx.config),
+    fetchAllLeads(ctx.config),
   ]);
 
   ctx.errors.push(...jobResult.errors, ...leadResult.errors);

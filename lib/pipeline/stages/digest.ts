@@ -19,7 +19,7 @@ export function buildSummary(
   const c = ctx.counters;
   const lines: string[] = [];
 
-  if (ctx.env.DRY_RUN) {
+  if (ctx.config.dryRun) {
     lines.push(
       "*** DRY RUN - no email was sent. Everything below was drafted only. ***",
       ""
@@ -83,9 +83,9 @@ export async function sendDigestEmail(
   // DRY_RUN suppresses the digest too. That is deliberate: the flag's promise is
   // that nothing at all leaves your mailbox, and a "nothing was sent" email is
   // still an email.
-  if (ctx.env.DRY_RUN) return;
+  if (ctx.config.dryRun) return;
 
-  const appUrl = ctx.env.NEXT_PUBLIC_APP_URL;
+  const appUrl = ctx.config.NEXT_PUBLIC_APP_URL;
   const c = ctx.counters;
 
   const body = [

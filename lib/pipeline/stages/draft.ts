@@ -23,8 +23,8 @@ import { claimJobs, claimLeads, failJob, failLead } from "./claim";
 // ---------------------------------------------------------------------------
 
 export async function runDraft(ctx: StageContext): Promise<StageResult> {
-  const limit = ctx.env.WORKER_BATCH_SIZE;
-  const apiKey = ctx.env.ANTHROPIC_API_KEY;
+  const limit = ctx.config.WORKER_BATCH_SIZE;
+  const apiKey = ctx.config.ANTHROPIC_API_KEY;
 
   const jobs = await claimJobs(ctx, "draft", limit);
   const leads = await claimLeads(ctx, "draft", limit);
