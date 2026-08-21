@@ -23,6 +23,13 @@ export async function runFollowUp(ctx: StageContext): Promise<StageResult> {
   if (!ctx.env.ENABLE_FOLLOWUPS) return { processed: 0, hasMore: false };
   if (ctx.env.DRY_RUN) return { processed: 0, hasMore: false };
 
+  // Unlike dispatch, a follow-up has nothing useful to do without a mailbox.
+  // Dispatch can still draft and queue for one-click sending; a follow-up is
+  // ONLY a send, so with no sender there is no half-measure — it waits for the
+  // next run instead. `nextFollowUpAt` is left untouched, so nothing is skipped
+  // permanently: the moment a mailbox is configured, everything due goes out.
+  if (!ctx.sender) return { processed: 0, hasMore: false };
+
   const now = new Date();
   let remaining = ctx.env.FOLLOWUP_DAILY_CAP;
   if (remaining <= 0) return { processed: 0, hasMore: false };
@@ -106,6 +113,7 @@ export async function runFollowUp(ctx: StageContext): Promise<StageResult> {
       });
 
       const result = await sendMail({
+        from: ctx.sender!,
         to: app.sentTo!,
         subject: followUp.subject,
         text: followUp.text,
@@ -190,6 +198,7 @@ export async function runFollowUp(ctx: StageContext): Promise<StageResult> {
       // worse with spam filters, and a freelance client wants a portfolio link
       // before a CV. composeFollowUp puts the portfolio link in the body.
       const result = await sendMail({
+        from: ctx.sender!,
         to: pitch.sentTo!,
         subject: followUp.subject,
         text: followUp.text,

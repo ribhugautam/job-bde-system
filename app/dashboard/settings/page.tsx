@@ -1,4 +1,8 @@
 import { LINKS } from "@/lib/domain/scoring/resume-profile";
+import { requireUser } from "@/lib/infra/session";
+import { getMailSettings } from "@/lib/infra/db/user-mail";
+import MailSettings from "@/components/settings/MailSettings";
+import DbErrorNotice from "@/components/DbErrorNotice";
 
 export const dynamic = "force-dynamic";
 
@@ -51,10 +55,26 @@ function EnvRow({
   );
 }
 
-export default function SettingsPage() {
+export default async function SettingsPage() {
+  const user = await requireUser("/dashboard/settings");
+
+  let mail;
+  try {
+    mail = await getMailSettings(user.id);
+  } catch (err) {
+    return <DbErrorNotice error={err} />;
+  }
+
   const dryRun = process.env.DRY_RUN === "1";
   return (
     <div className="space-y-8 max-w-2xl">
+      <div>
+        <h2 className="mb-2 text-sm font-semibold text-(--text-muted)">
+          Your sending mailbox
+        </h2>
+        <MailSettings settings={mail} />
+      </div>
+
       <div
         className={`rounded border p-3 ${
           dryRun

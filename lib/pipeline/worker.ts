@@ -1,5 +1,7 @@
 import { getEnv } from "@/lib/config/env";
 import { getDb, schema } from "@/lib/infra/db/client";
+import { getOwnerUserId } from "@/lib/infra/db/users";
+import { getOwnerSenderIdentity } from "@/lib/infra/db/user-mail";
 import {
   createDeadline,
   BATCH_RESERVE_MS,
@@ -63,14 +65,33 @@ export async function runWorker(): Promise<RunSummary> {
   const db = getDb();
   const deadline: Deadline = createDeadline(env.WORKER_TIME_BUDGET_MS);
 
+  // Resolved once per run rather than per send: it is the same answer every
+  // time, and a run that cannot send at all should say so once in the digest
+  // instead of failing item by item.
+  const ownerUserId = await getOwnerUserId();
+  const sender = await getOwnerSenderIdentity(ownerUserId);
+
   const ctx: StageContext = {
     db,
     env,
     deadline,
+    sender,
+    ownerUserId,
     counters: emptyCounters(),
     errors: [],
     notices: [],
   };
+
+  if (!sender) {
+    // A notice, not an error: drafting everything and queueing it is the
+    // correct behaviour, not a failure. It is still the most valuable thing to
+    // act on, so it is stated plainly rather than inferred from zero sends.
+    ctx.notices.push(
+      "No sending mailbox is configured, so nothing can be sent -- everything " +
+        "is being drafted and queued for one-click sending instead. Set one up " +
+        "on the Settings page, or set GMAIL_USER/GMAIL_APP_PASSWORD."
+    );
+  }
 
   let budgetExhausted = false;
 

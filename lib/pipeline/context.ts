@@ -1,6 +1,7 @@
 import type { Env } from "@/lib/config/env";
 import type { Deadline } from "./deadline";
 import { getDb } from "@/lib/infra/db/client";
+import type { SenderIdentity } from "@/lib/infra/db/user-mail";
 
 export type Db = ReturnType<typeof getDb>;
 
@@ -43,6 +44,31 @@ export type StageContext = {
   db: Db;
   env: Env;
   deadline: Deadline;
+
+  /**
+   * Who the unattended run sends as, resolved once at the start of the run.
+   *
+   * NULL means no usable mailbox, and every stage treats that as "draft and
+   * queue, do not send" rather than falling back to some other sender. There is
+   * no deployment-wide From address to fall back TO any more, and inventing one
+   * would mean a colleague's mail leaving under the wrong name.
+   *
+   * The pipeline still runs ONE shared queue rather than one per person, so
+   * this is the owner's identity -- the same single mailbox it used before
+   * accounts existed. Per-user queues are a larger change; what matters here is
+   * that the address is now explicit rather than ambient.
+   */
+  sender: SenderIdentity | null;
+
+  /**
+   * Which user the unattended run acts on behalf of, resolved once per run.
+   *
+   * Everything the pipeline creates -- applications, outreach -- is stamped
+   * with this, so a draft knows whose voice it is in, whose CV to attach and
+   * whose mailbox to leave from. Null only on a deployment with no admin
+   * account, which db:migrate is what prevents.
+   */
+  ownerUserId: number | null;
   counters: Counters;
   /**
    * Things that went WRONG: a source returned 400, a send failed, a row could

@@ -103,7 +103,10 @@ async function dispatchJobs(
     }
 
     try {
-      const canSend = Boolean(job.applyEmail) && Boolean(resume);
+      // ctx.sender is the new gate alongside applyEmail and resume: with no
+      // usable mailbox there is no address this could honestly come from.
+      const canSend =
+        Boolean(job.applyEmail) && Boolean(resume) && Boolean(ctx.sender);
       const willSend = canSend && !ctx.env.DRY_RUN;
 
       if (!willSend) {
@@ -133,6 +136,7 @@ async function dispatchJobs(
       }
 
       const result = await sendMail({
+        from: ctx.sender!,
         to: job.applyEmail!,
         subject: `Application: ${job.title}`,
         text: app.coverLetter,
@@ -252,7 +256,8 @@ async function dispatchLeads(
     }
 
     try {
-      const canSend = Boolean(lead.contactEmail) && remaining > 0;
+      const canSend =
+        Boolean(lead.contactEmail) && remaining > 0 && Boolean(ctx.sender);
       const willSend = canSend && !ctx.env.DRY_RUN;
 
       if (!willSend) {
@@ -284,6 +289,7 @@ async function dispatchLeads(
       // email with a PDF attached scores materially worse with spam filters,
       // and a freelance client wants a portfolio link first, not a CV.
       const result = await sendMail({
+        from: ctx.sender!,
         to: lead.contactEmail!,
         subject: `Re: ${lead.title}`,
         text: pitch.pitch,

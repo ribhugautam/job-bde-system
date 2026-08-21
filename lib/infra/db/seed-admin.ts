@@ -88,6 +88,51 @@ export async function ensureFirstAdmin(): Promise<SeedResult> {
  * to that user. Run on every migrate, not just the seeding one, so a database
  * migrated before the admin existed is still repaired on the next run.
  */
+export async function claimOrphanedRecords(): Promise<{
+  documents: number;
+  applications: number;
+  outreach: number;
+}> {
+  const ownerId = await getOwnerUserId();
+  if (ownerId === null) {
+    return { documents: 0, applications: 0, outreach: 0 };
+  }
+
+  const db = getDb();
+
+  // Applications and outreach are a record of email that really was sent, from
+  // the one mailbox this deployment had. Their sender is not a guess.
+  const [apps, pitches] = await Promise.all([
+    db
+      .select({ id: schema.applications.id })
+      .from(schema.applications)
+      .where(isNull(schema.applications.userId)),
+    db
+      .select({ id: schema.outreach.id })
+      .from(schema.outreach)
+      .where(isNull(schema.outreach.userId)),
+  ]);
+
+  if (apps.length) {
+    await db
+      .update(schema.applications)
+      .set({ userId: ownerId })
+      .where(isNull(schema.applications.userId));
+  }
+  if (pitches.length) {
+    await db
+      .update(schema.outreach)
+      .set({ userId: ownerId })
+      .where(isNull(schema.outreach.userId));
+  }
+
+  return {
+    documents: await claimOrphanedDocuments(),
+    applications: apps.length,
+    outreach: pitches.length,
+  };
+}
+
 export async function claimOrphanedDocuments(): Promise<number> {
   const ownerId = await getOwnerUserId();
   if (ownerId === null) return 0;

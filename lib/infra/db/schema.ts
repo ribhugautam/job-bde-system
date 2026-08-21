@@ -257,6 +257,51 @@ export const jobs = sqliteTable(
 );
 
 // ---------------------------------------------------------------------------
+// PER-USER SENDING IDENTITY.
+//
+// Before this, every email left through one GMAIL_USER mailbox and was signed
+// with one person's name. A colleague applying to a job would have had their
+// application arrive from somebody else's address, signed as somebody else —
+// to a real company, under a real name. That is the failure this table exists
+// to make impossible.
+// ---------------------------------------------------------------------------
+export const userMail = sqliteTable("user_mail", {
+  userId: integer("user_id").primaryKey(),
+
+  /** The address mail is sent FROM, and the SMTP username. */
+  smtpUser: text("smtp_user").notNull(),
+  /**
+   * AES-256-GCM ciphertext — never the password itself. Encrypted with a key
+   * derived from ENCRYPTION_KEY, deliberately NOT from AUTH_SECRET: rotating a
+   * cookie-signing key must not silently destroy stored credentials. See
+   * lib/infra/crypto/secret.ts.
+   *
+   * This value must never be returned to a client, logged, or included in any
+   * API response. lib/infra/db/user-mail.ts is the only module that reads it.
+   */
+  smtpPasswordEncrypted: text("smtp_password_encrypted").notNull(),
+  /** Display name on outgoing mail. Defaults to the user's name. */
+  fromName: text("from_name"),
+
+  smtpHost: text("smtp_host").notNull().default("smtp.gmail.com"),
+  smtpPort: integer("smtp_port").notNull().default(465),
+
+  /**
+   * Set only once a real connection to the mail server has succeeded.
+   *
+   * AUTO-SEND IS GATED ON THIS, not on the row existing. A saved-but-untested
+   * mailbox is exactly as likely to be a typo as a working setup, and the cost
+   * of being wrong is an application that silently never arrives.
+   */
+  verifiedAt: integer("verified_at", { mode: "timestamp" }),
+  lastError: text("last_error"),
+
+  updatedAt: integer("updated_at", { mode: "timestamp" }).default(
+    sql`(unixepoch())`
+  ),
+});
+
+// ---------------------------------------------------------------------------
 // PER-USER JOB STATE — the private half of a shared job pool.
 //
 // Everyone sees the same ingested jobs; what each person has DONE with one is
@@ -352,6 +397,15 @@ export const applications = sqliteTable(
   "applications",
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
+    /**
+     * Who applied. NULLABLE only because rows predate accounts — the migration
+     * assigns those to the seeded admin, which is factually right since the
+     * deployment had exactly one user when they were written.
+     *
+     * Load-bearing for correctness, not just attribution: it decides whose
+     * mailbox the email leaves from and whose resume is attached.
+     */
+    userId: integer("user_id"),
     jobId: integer("job_id").notNull(),
     coverLetter: text("cover_letter").notNull(),
     emphasizedSkills: text("emphasized_skills", { mode: "json" })
@@ -386,6 +440,7 @@ export const applications = sqliteTable(
   },
   (t) => [
     index("applications_job_id_idx").on(t.jobId),
+    index("applications_user_id_idx").on(t.userId),
     index("applications_message_id_idx").on(t.messageId),
     index("applications_next_follow_up_idx").on(t.nextFollowUpAt),
   ]
@@ -398,6 +453,8 @@ export const outreach = sqliteTable(
   "outreach",
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
+    /** Who is pitching. See the note on applications.userId. */
+    userId: integer("user_id"),
     leadId: integer("lead_id").notNull(),
     pitch: text("pitch").notNull(),
     generatedBy: text("generated_by").notNull().default("template"),
@@ -420,6 +477,7 @@ export const outreach = sqliteTable(
   },
   (t) => [
     index("outreach_lead_id_idx").on(t.leadId),
+    index("outreach_user_id_idx").on(t.userId),
     index("outreach_message_id_idx").on(t.messageId),
     index("outreach_next_follow_up_idx").on(t.nextFollowUpAt),
   ]

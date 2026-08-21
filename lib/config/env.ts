@@ -83,6 +83,25 @@ const schema = z.object({
     )
     .optional(),
 
+  /**
+   * Encrypts colleagues' stored mailbox passwords at rest.
+   *
+   * SEPARATE FROM AUTH_SECRET on purpose. AUTH_SECRET signs session cookies and
+   * is expected to be rotated -- the docs already say rotating it signs
+   * everyone out, which is cheap and recoverable. If it also encrypted
+   * credentials, that same rotation would silently destroy every stored
+   * mailbox password, and the damage would surface days later as applications
+   * quietly failing to send.
+   *
+   * Optional: without it, mailbox setup is refused outright and everything is
+   * drafted and queued instead. Nothing falls back to storing a plaintext
+   * secret.
+   */
+  ENCRYPTION_KEY: z
+    .string()
+    .min(32, "ENCRYPTION_KEY must be at least 32 characters (openssl rand -hex 32)")
+    .optional(),
+
   // --- Cron ----------------------------------------------------------------
   CRON_SECRET: optionalStr,
 
@@ -160,6 +179,7 @@ function build(raw: NodeJS.ProcessEnv) {
     OWNER_EMAIL: raw.OWNER_EMAIL,
     APP_PASSWORD: raw.APP_PASSWORD,
     AUTH_SECRET: raw.AUTH_SECRET,
+    ENCRYPTION_KEY: raw.ENCRYPTION_KEY,
     CRON_SECRET: raw.CRON_SECRET,
     DRY_RUN: raw.DRY_RUN,
     MATCH_THRESHOLD: raw.MATCH_THRESHOLD,
