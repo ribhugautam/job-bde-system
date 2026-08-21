@@ -20,6 +20,7 @@ import { createClient } from "@libsql/client";
 import { drizzle } from "drizzle-orm/libsql";
 import { migrate } from "drizzle-orm/libsql/migrator";
 import { resolveDbTarget } from "./db-target";
+import { ensureFirstAdmin } from "../lib/infra/db/seed-admin";
 
 const MIGRATIONS_FOLDER = "lib/infra/db/migrations";
 
@@ -49,6 +50,23 @@ async function main() {
   }
 
   console.log(`Done. ${tables.length} tables: ${tables.join(", ")}`);
+
+  // Seeding the first admin is part of migrating, not a separate step somebody
+  // has to remember. The migration that creates `users` is the exact moment the
+  // app stops accepting APP_PASSWORD and starts requiring an account, so a
+  // deployment that migrated and did not seed is one nobody can log into — and
+  // registration is invite-only, so there would be nobody to issue the first
+  // invite either. See lib/infra/db/seed-admin.ts.
+  const seeded = await ensureFirstAdmin();
+  if (seeded.created) {
+    console.log(
+      `Created the first admin account: ${seeded.email}\n` +
+        `  Sign in with APP_PASSWORD, then change it from the dashboard.`
+    );
+  } else {
+    console.log(`First-admin seed skipped: ${seeded.reason}`);
+  }
+
   client.close();
 }
 

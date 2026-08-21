@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { runWorker } from "@/lib/pipeline/worker";
 import { getEnvSafe } from "@/lib/config/env";
+import { getApiActor } from "@/lib/infra/session";
 
 export const dynamic = "force-dynamic";
 // Matches /api/cron/daily. The worker stops itself on WORKER_TIME_BUDGET_MS
@@ -11,9 +12,11 @@ export const maxDuration = 60;
 /**
  * Runs the pipeline on demand from the dashboard.
  *
- * Authorization is the session cookie, enforced by proxy.ts — this path is
- * under /api/ and is NOT in the public allowlist there, so an unauthenticated
- * caller gets a 401 before reaching this code.
+ * Authorization is in two layers. proxy.ts rejects an unauthenticated caller
+ * before this code runs — this path is under /api/ and is NOT in the public
+ * allowlist there. But the Edge gate cannot reach the database, so it cannot
+ * tell a live account from a deactivated one; getApiActor() below is what
+ * actually decides whether this caller may still run the pipeline.
  *
  * Deliberately a separate route from /api/cron/daily rather than the button
  * calling that one. /api/cron/daily is public (Vercel Cron cannot send a
@@ -27,6 +30,14 @@ export const maxDuration = 60;
  * be triggerable by a prefetch, a link, or a page preview.
  */
 export async function POST() {
+  // proxy.ts proves only that the cookie is genuine; it cannot reach the
+  // database, so it cannot tell whether the account behind it still exists
+  // or is still active. Without this check a deactivated colleague keeps
+  // full use of this route until their cookie expires -- up to 30 days.
+  const actor = await getApiActor();
+  if (!actor.ok) {
+    return NextResponse.json({ error: actor.error }, { status: actor.status });
+  }
   const env = getEnvSafe();
   if (!env.ok) {
     return NextResponse.json(

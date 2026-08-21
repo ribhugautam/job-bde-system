@@ -1,16 +1,31 @@
 /**
- * Single-user auth for this deployment.
+ * The cryptographic half of auth: session tokens and the AUTH_SECRET/
+ * APP_PASSWORD configuration gate.
  *
- * There is no user table and no signup: one password (APP_PASSWORD) unlocks the
- * whole app, and a signed cookie keeps you logged in. Everything here runs on
- * the Edge runtime (proxy.ts) as well as Node, so it uses Web Crypto only -
- * no `node:crypto` imports.
+ * Everything here runs on the Edge runtime (proxy.ts) as well as Node, so it
+ * uses Web Crypto only — no `node:crypto` imports, and nothing that reaches the
+ * database.
+ *
+ * THE SPLIT THIS FILE SITS ON, because getting it wrong is how authorization
+ * bugs happen:
+ *
+ *   this file  — "is this a genuine, unexpired token we issued, and whose id
+ *                 does it carry?" Answerable on the Edge with no I/O.
+ *
+ *   session.ts — "is that user real, and are they still allowed in?" Needs the
+ *                 database, so it cannot live here, and it is the ONLY thing
+ *                 that may be treated as proof of identity.
+ *
+ * Accounts themselves live in the `users` table; passwords are hashed in
+ * lib/infra/crypto/password.ts. APP_PASSWORD is legacy and now seeds only the
+ * first admin account.
  */
 
 import {
   MIN_PASSWORD_LENGTH,
   MIN_SECRET_LENGTH,
 } from "@/lib/config/auth-policy";
+import { safeEqualHex } from "@/lib/infra/crypto/constant-time";
 
 export const SESSION_COOKIE = "bde_session";
 export const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 30; // 30 days
@@ -121,18 +136,17 @@ async function hmacHex(message: string, secret: string): Promise<string> {
     .join("");
 }
 
-/** Length-independent, constant-time-ish comparison of two hex digests. */
-function safeEqual(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  let diff = 0;
-  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  return diff === 0;
-}
-
 /**
  * Compares a submitted password against the configured one without leaking
  * length or content through timing: both sides are HMAC'd first (the standard
  * double-HMAC trick) and only the fixed-length digests are compared.
+ *
+ * LEGACY. This checks the single shared APP_PASSWORD, which is no longer how
+ * anyone signs in — real accounts live in the `users` table and verify through
+ * lib/infra/crypto/password.ts. It survives for exactly one purpose: seeding
+ * the first admin account during migration, so the operator is not locked out
+ * of their own deployment at the moment accounts are introduced. Nothing else
+ * should call it.
  */
 export async function passwordMatches(
   submitted: string,
@@ -142,28 +156,63 @@ export async function passwordMatches(
     hmacHex(submitted, secret),
     hmacHex(password, secret),
   ]);
-  return safeEqual(a, b);
+  return safeEqualHex(a, b);
 }
 
-/** Token format: `<expiryEpochSeconds>.<hmac>`. Stateless - no server session store. */
-export async function createSessionToken(secret: string): Promise<string> {
+/** What a valid session cookie asserts. */
+export type SessionClaims = { userId: number };
+
+/**
+ * Token format: `<userId>.<expiryEpochSeconds>.<hmac>`. Stateless — no server
+ * session store, which is what lets the Edge gate in proxy.ts verify a session
+ * without a database round trip on every request.
+ *
+ * The previous format was `<exp>.<hmac>` with no identity in it. Tokens in that
+ * shape have two segments instead of three and are simply rejected, so everyone
+ * signs in once after this ships. That is the correct trade: silently accepting
+ * an identity-less token would mean deciding, somewhere downstream, which user
+ * it meant.
+ *
+ * WHAT THIS DOES NOT PROVE: that the user still exists, or is still active. The
+ * signature is checked without touching the database, so a deactivated user's
+ * cookie stays cryptographically valid until it expires. getSessionUser() in
+ * lib/infra/session.ts is the authority on live identity, and every page and
+ * route must go through it. This function answers "is this a genuine token we
+ * issued?" — nothing more.
+ */
+export async function createSessionToken(
+  userId: number,
+  secret: string
+): Promise<string> {
   const exp = Math.floor(Date.now() / 1000) + SESSION_MAX_AGE_SECONDS;
-  const sig = await hmacHex(String(exp), secret);
-  return `${exp}.${sig}`;
+  const payload = `${userId}.${exp}`;
+  const sig = await hmacHex(payload, secret);
+  return `${payload}.${sig}`;
 }
 
+/** Returns the claims a valid token carries, or null. Never throws. */
 export async function verifySessionToken(
   token: string | undefined,
   secret: string
-): Promise<boolean> {
-  if (!token) return false;
-  const dot = token.indexOf(".");
-  if (dot <= 0) return false;
-  const exp = token.slice(0, dot);
-  const sig = token.slice(dot + 1);
-  if (!/^\d+$/.test(exp)) return false;
-  if (Number(exp) <= Math.floor(Date.now() / 1000)) return false;
-  return safeEqual(sig, await hmacHex(exp, secret));
+): Promise<SessionClaims | null> {
+  if (!token) return null;
+
+  const parts = token.split(".");
+  if (parts.length !== 3) return null;
+
+  const [userIdRaw, exp, sig] = parts;
+  if (!/^\d+$/.test(userIdRaw) || !/^\d+$/.test(exp)) return null;
+  if (Number(exp) <= Math.floor(Date.now() / 1000)) return null;
+
+  const expected = await hmacHex(`${userIdRaw}.${exp}`, secret);
+  if (!safeEqualHex(sig, expected)) return null;
+
+  const userId = Number(userIdRaw);
+  // A non-positive or non-integral id cannot name a row, and letting one
+  // through would push a nonsense value into every downstream query.
+  if (!Number.isSafeInteger(userId) || userId <= 0) return null;
+
+  return { userId };
 }
 
 /**

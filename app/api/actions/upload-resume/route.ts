@@ -1,9 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { saveResume, MAX_RESUME_BYTES } from "@/lib/infra/db/documents";
+import { getApiActor } from "@/lib/infra/session";
 
 export const runtime = "nodejs";
 
 export async function POST(req: NextRequest) {
+  // proxy.ts proves only that the cookie is genuine; it cannot reach the
+  // database, so it cannot tell whether the account behind it still exists
+  // or is still active. Without this check a deactivated colleague keeps
+  // full use of this route until their cookie expires -- up to 30 days.
+  const actor = await getApiActor();
+  if (!actor.ok) {
+    return NextResponse.json({ ok: false, error: actor.error }, { status: actor.status });
+  }
   let form: FormData;
   try {
     form = await req.formData();

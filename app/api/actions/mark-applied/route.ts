@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { and, eq } from "drizzle-orm";
 import { getDb, schema } from "@/lib/infra/db/client";
+import { getApiActor } from "@/lib/infra/session";
 
 export const dynamic = "force-dynamic";
 
@@ -18,6 +19,14 @@ export const dynamic = "force-dynamic";
  * way to silently lose an item.
  */
 export async function POST(req: NextRequest) {
+  // proxy.ts proves only that the cookie is genuine; it cannot reach the
+  // database, so it cannot tell whether the account behind it still exists
+  // or is still active. Without this check a deactivated colleague keeps
+  // full use of this route until their cookie expires -- up to 30 days.
+  const actor = await getApiActor();
+  if (!actor.ok) {
+    return NextResponse.json({ error: actor.error }, { status: actor.status });
+  }
   let body: unknown;
   try {
     body = await req.json();

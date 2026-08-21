@@ -4,6 +4,7 @@ import { getDb, schema } from "@/lib/infra/db/client";
 import { sendMail } from "@/lib/infra/mail/send";
 import { getEnv } from "@/lib/config/env";
 import { nextFollowUpDue } from "@/lib/pipeline/followup-schedule";
+import { getApiActor } from "@/lib/infra/session";
 
 export const dynamic = "force-dynamic";
 
@@ -12,6 +13,14 @@ export const dynamic = "force-dynamic";
 // need to open the listing and paste the drafted cover letter in yourself),
 // or because you want to review before an email send goes out.
 export async function POST(req: NextRequest) {
+  // proxy.ts proves only that the cookie is genuine; it cannot reach the
+  // database, so it cannot tell whether the account behind it still exists
+  // or is still active. Without this check a deactivated colleague keeps
+  // full use of this route until their cookie expires -- up to 30 days.
+  const actor = await getApiActor();
+  if (!actor.ok) {
+    return NextResponse.json({ error: actor.error }, { status: actor.status });
+  }
   const { applicationId, overrideEmail } = await req.json();
   if (!applicationId) {
     return NextResponse.json({ error: "applicationId required" }, { status: 400 });

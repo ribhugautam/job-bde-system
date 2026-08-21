@@ -17,6 +17,86 @@ import {
 // code is unchanged.
 
 // ---------------------------------------------------------------------------
+// USERS
+//
+// The deployment was single-user: one APP_PASSWORD unlocked everything, and
+// there was no table here at all. Colleagues now have real accounts.
+//
+// Registration is invite-only by design — this app sits on a public URL and
+// sends email on people's behalf, so "anyone who finds the login page" is not
+// an acceptable population. See `invites` below.
+// ---------------------------------------------------------------------------
+export const users = sqliteTable(
+  "users",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    // Stored lowercased and trimmed by lib/infra/db/users.ts. The unique index
+    // is on the raw column, so normalising on the way in is what actually
+    // prevents Alice@x.com and alice@x.com becoming two accounts.
+    email: text("email").notNull(),
+    name: text("name").notNull(),
+    /**
+     * Self-describing PBKDF2 string: `pbkdf2-sha256$<iterations>$<salt>$<hash>`.
+     * One column rather than hash+salt+iterations, so the cost factor can be
+     * raised without a migration. See lib/infra/crypto/password.ts.
+     */
+    passwordHash: text("password_hash").notNull(),
+    // "admin" can invite and deactivate people; "member" cannot. Deliberately
+    // two values and not a permission system — there are two things to decide.
+    role: text("role").notNull().default("member"),
+    /**
+     * Deactivation is a flag, never a DELETE. Applications and outreach
+     * reference a user, and those rows are a record of email that really was
+     * sent to a real company; removing the sender would strand them.
+     */
+    isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
+    /**
+     * Powers the "new since you last looked" marker on the job list. Updated on
+     * each dashboard visit — this is the whole of the seen/unseen mechanism,
+     * deliberately, instead of a per-user-per-job seen table.
+     */
+    lastSeenAt: integer("last_seen_at", { mode: "timestamp" }),
+    createdAt: integer("created_at", { mode: "timestamp" }).default(
+      sql`(unixepoch())`
+    ),
+    updatedAt: integer("updated_at", { mode: "timestamp" }).default(
+      sql`(unixepoch())`
+    ),
+  },
+  (t) => [uniqueIndex("users_email_uq").on(t.email)]
+);
+
+// ---------------------------------------------------------------------------
+// INVITES — the only route to a new account.
+//
+// Single-use and expiring. The token is the credential, so it is generated with
+// crypto.getRandomValues and never derived from the email.
+// ---------------------------------------------------------------------------
+export const invites = sqliteTable(
+  "invites",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    token: text("token").notNull(),
+    email: text("email").notNull(),
+    role: text("role").notNull().default("member"),
+    expiresAt: integer("expires_at", { mode: "timestamp" }).notNull(),
+    /** Set the moment it is redeemed. Non-null means spent — never reusable. */
+    acceptedAt: integer("accepted_at", { mode: "timestamp" }),
+    acceptedByUserId: integer("accepted_by_user_id"),
+    createdByUserId: integer("created_by_user_id").notNull(),
+    /** Revoked invites keep their row so an admin can see what was withdrawn. */
+    revokedAt: integer("revoked_at", { mode: "timestamp" }),
+    createdAt: integer("created_at", { mode: "timestamp" }).default(
+      sql`(unixepoch())`
+    ),
+  },
+  (t) => [
+    uniqueIndex("invites_token_uq").on(t.token),
+    index("invites_email_idx").on(t.email),
+  ]
+);
+
+// ---------------------------------------------------------------------------
 // Full-time / part-time REMOTE JOBS pulled from job board sources
 // ---------------------------------------------------------------------------
 export const jobs = sqliteTable(
